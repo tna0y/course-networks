@@ -26,7 +26,8 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
 
     def send(self, data: bytes):
-        return self.sendto(data)
+        print("test")
+		return self.sendto(data)
 
     def recv(self, n: int):
         return self.recvfrom(n)
