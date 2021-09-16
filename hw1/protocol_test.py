@@ -49,13 +49,13 @@ def test_basic(iterations):
 @pytest.mark.parametrize("iterations", [10, 100, 1000, 5000])
 @pytest.mark.timeout(10)
 def test_small_loss(iterations):
-    run_echo_test(iterations=iterations, packet_loss=0.1, msg_size=14)
+    run_echo_test(iterations=iterations, packet_loss=0.02, msg_size=14)
 
 
 @pytest.mark.parametrize("iterations", [10, 100, 1000, 5000])
 @pytest.mark.timeout(10)
 def test_high_loss(iterations):
-    run_echo_test(iterations=iterations, packet_loss=0.5, msg_size=17)
+    run_echo_test(iterations=iterations, packet_loss=0.1, msg_size=17)
 
 
 @pytest.mark.parametrize("msg_size", [100, 100_000, 10_000_000])
