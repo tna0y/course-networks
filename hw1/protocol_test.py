@@ -38,6 +38,7 @@ def run_echo_test(iterations, packet_loss, msg_size):
 
     client_thread.join()
     server_thread.join()
+    assert client.success == True
 
 
 @pytest.mark.parametrize("iterations", [10, 100, 1000, 10000])

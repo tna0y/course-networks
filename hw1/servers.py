@@ -8,7 +8,7 @@ class Base:
         self.socket = socket
         self.iterations = iterations
         self.msg_size = msg_size
-
+        self.success = True
 
 class EchoServer(Base):
 
@@ -18,10 +18,15 @@ class EchoServer(Base):
 
 
 class EchoClient(Base):
-
+    
     def run(self):
         for _ in range(self.iterations):
             msg = os.urandom(self.msg_size)
             n = self.socket.send(msg)
-            assert n == self.msg_size
-            assert msg == self.socket.recv(n)
+            if n != self.msg_size:
+                self.success = False
+                return
+            if msg != self.socket.recv(n):
+                self.success = False
+                return
+            return
