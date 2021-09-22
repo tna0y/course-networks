@@ -1,7 +1,7 @@
 import random
 
 import pytest
-from threading import Thread
+from testable_thread import TestableThread
 
 from protocol import MyTCPProtocol
 from servers import EchoClient, EchoServer
@@ -28,8 +28,8 @@ def run_echo_test(iterations, packet_loss, msg_size):
     client = EchoClient(a, iterations=iterations, msg_size=msg_size)
     server = EchoServer(b, iterations=iterations, msg_size=msg_size)
 
-    client_thread = Thread(target=client.run)
-    server_thread = Thread(target=server.run)
+    client_thread = TestableThread(target=client.run)
+    server_thread = TestableThread(target=server.run)
     client_thread.daemon = True
     server_thread.daemon = True
 
