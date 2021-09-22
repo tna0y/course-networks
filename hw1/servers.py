@@ -18,7 +18,7 @@ class EchoServer(Base):
 
 
 class EchoClient(Base):
-    
+
     def run(self):
         for _ in range(self.iterations):
             msg = os.urandom(self.msg_size)
