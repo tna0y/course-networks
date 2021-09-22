@@ -23,5 +23,5 @@ class EchoClient(Base):
         for _ in range(self.iterations):
             msg = os.urandom(self.msg_size)
             n = self.socket.send(msg)
-            assert n == len(msg)
+            assert n == self.msg_size
             assert msg == self.socket.recv(n)
