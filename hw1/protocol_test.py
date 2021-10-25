@@ -41,31 +41,31 @@ def run_echo_test(iterations, packet_loss, msg_size):
 
 
 @pytest.mark.parametrize("iterations", [10, 100, 1000, 10000])
-@pytest.mark.timeout(5)
+@pytest.mark.timeout(10)
 def test_basic(iterations):
     run_echo_test(iterations=iterations, packet_loss=0.0, msg_size=11)
 
 
 @pytest.mark.parametrize("iterations", [10, 100, 1000, 5000])
-@pytest.mark.timeout(10)
+@pytest.mark.timeout(20)
 def test_small_loss(iterations):
     run_echo_test(iterations=iterations, packet_loss=0.02, msg_size=14)
 
 
 @pytest.mark.parametrize("iterations", [10, 100, 1000, 5000])
-@pytest.mark.timeout(10)
+@pytest.mark.timeout(20)
 def test_high_loss(iterations):
     run_echo_test(iterations=iterations, packet_loss=0.1, msg_size=17)
 
 
 @pytest.mark.parametrize("msg_size", [100, 100_000, 10_000_000])
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(60)
 def test_large_message(msg_size):
     run_echo_test(iterations=2, packet_loss=0.02, msg_size=msg_size)
 
 
 @pytest.mark.parametrize("iterations", [50_000])
-@pytest.mark.timeout(30)
+@pytest.mark.timeout(60)
 def test_perfomance(iterations):
     run_echo_test(iterations=iterations, packet_loss=0.02, msg_size=10)
 
