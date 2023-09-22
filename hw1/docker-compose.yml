@@ -1,0 +1,8 @@
+version: '3.5'
+services:
+  protocol:
+    image: protocol
+    build:
+      context: .
+      dockerfile: Dockerfile
+    privileged: true

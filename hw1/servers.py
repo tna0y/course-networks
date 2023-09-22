@@ -14,9 +14,9 @@ class EchoServer(Base):
 
     def run(self):
         for _ in range(self.iterations):
-            self.socket.send(self.socket.recv(self.msg_size))
-
-
+            msg = self.socket.recv(self.msg_size)
+            self.socket.send(msg)
+            
 class EchoClient(Base):
 
     def run(self):
