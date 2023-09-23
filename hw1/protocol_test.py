@@ -46,15 +46,15 @@ current_netem_state = None
 
 def setup_netem(packet_loss, duplicate, reorder):
     global current_netem_state
-    if current_netem_state != (packet_loss, duplicate, reorder):
-        current_netem_state = (packet_loss, duplicate, reorder)
-        os.system(f"ip netns exec virtual_net0 tc qdisc replace dev lo root netem loss {packet_loss * 100}%")
-        os.system(f"ip netns exec virtual_net0 tc qdisc replace dev lo root netem duplicate {duplicate * 100}%")
-        delay = 0
-        if reorder > 0.0:
-            delay = 10
-        os.system(f"ip netns exec virtual_net0 tc qdisc replace dev lo root netem reorder {reorder * 100}% delay {delay}ms")
-        
+    if current_netem_state == (packet_loss, duplicate, reorder):
+        return
+    current_netem_state = (packet_loss, duplicate, reorder)
+    delay = 0
+    if reorder > 0:
+        delay = 10
+
+    os.system(f"tc qdisc replace dev lo root netem loss {packet_loss * 100}% duplicate {duplicate * 100}% reorder {reorder * 100}% delay {delay}ms")
+
 
 @pytest.mark.parametrize("iterations", [10, 100, 1000])
 @pytest.mark.timeout(20)
