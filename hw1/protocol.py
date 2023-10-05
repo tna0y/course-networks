@@ -70,7 +70,7 @@ class DeBufferizer:
         return len(self.data_arr) == self.total_parts
 
     def get_losts(self):
-        print(set(range(1, self.total_parts+1)) - set(self.data_arr.keys()))
+        return set(range(1, self.total_parts+1)) - set(self.data_arr.keys())
 
 
     def get_data(self):
@@ -82,40 +82,49 @@ class DeBufferizer:
 
 class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
-        self.max_size = 2 ** 16
+        self.max_size = 2 ** 32
         super().__init__(*args, **kwargs)
 
     def send(self, data: bytes):
         b = Bufferizer(data)
         for data_part in b:
             self.sendto(data_part)
+            print("========SEND:", bytes(data_part))
         return len(data)
 
     def recv(self, n: int):
         d = DeBufferizer()
         while not d.is_done():
-            # print(d.get_losts())
             data_part = self.recvfrom(self.max_size)
+            print("========RECV:", bytes(data_part))
             d.add_part(data_part)
+            # print(data_part, d.get_losts())
         return d.get_data()
 
 
 if __name__ == "__main__":
     from protocol_test import setup_netem, run_echo_test
-    msg_size = 10_000_000
-    setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
-    run_echo_test(iterations=2, msg_size=msg_size)
+    # msg_size = 10_000_000
+    # setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
+    # run_echo_test(iterations=2, msg_size=msg_size)
+
+
+    setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
+    run_echo_test(iterations=10000, msg_size=14)
 
 
 
 
-    # msg = os.urandom(100)
+    # msg = b'\xdc\xf5\x06P\xce\x9eZ\xd9\xcf\x10\xa5\xa4\r' # os.urandom(100)
     # b = Bufferizer(msg)
     # d = DeBufferizer()
     # for part in b:
     #     d.add_part(part)
-    #     print(d.get_losts())
+    #     print(part)
+    #     # print(d.get_losts())
     # assert msg == d.get_data()
+    # print(d.get_data())
+    # print(msg)
     # print(d.is_done())
     # print(len(msg))
     # print(len(d.get_data()))
