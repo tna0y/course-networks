@@ -22,7 +22,7 @@ class UDPBasedProtocol:
 
 class Bufferizer:
     def __init__(self, data: bytes) -> None:
-        self.window_size = 10
+        self.window_size = 1024
         self.magic_sep = b'annndruha'
         self.sn_sep = bytes('/', encoding="UTF-8")
         self.data = data
@@ -43,14 +43,13 @@ class Bufferizer:
 
     def __iter__(self):
         for i in range(self.total_parts):
-            # print(self[i])
             yield self[i]
 
 
 
 class DeBufferizer:
     def __init__(self) -> None:
-        self.window_size = 10
+        self.window_size = 1024
         self.magic_seq = b'annndruha'
         self.sn_sep = bytes('/', encoding="UTF-8")
         self.data_arr = {}
@@ -70,7 +69,8 @@ class DeBufferizer:
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
 
-    # def get_one_lost(self):
+    def get_losts(self):
+        print(set(range(1, self.total_parts+1)) - set(self.data_arr.keys()))
 
 
     def get_data(self):
@@ -86,16 +86,15 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
 
     def send(self, data: bytes):
-        # print(f'send len {len(data)}')
         b = Bufferizer(data)
         for data_part in b:
-            send_bytes = self.sendto(data_part)
+            self.sendto(data_part)
         return len(data)
 
     def recv(self, n: int):
-        # print(f'recv len {n}')
         d = DeBufferizer()
         while not d.is_done():
+            # print(d.get_losts())
             data_part = self.recvfrom(self.max_size)
             d.add_part(data_part)
         return d.get_data()
@@ -103,12 +102,20 @@ class MyTCPProtocol(UDPBasedProtocol):
 
 if __name__ == "__main__":
     from protocol_test import setup_netem, run_echo_test
-    setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
-    run_echo_test(iterations=1, msg_size=5153)
-    # b = Bufferizer(b'a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z')
+    msg_size = 10_000_000
+    setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
+    run_echo_test(iterations=2, msg_size=msg_size)
+
+
+
+
+    # msg = os.urandom(100)
+    # b = Bufferizer(msg)
     # d = DeBufferizer()
-    # print('init ', d.is_done())
     # for part in b:
     #     d.add_part(part)
-    #     print(d.is_done())
-    # print(d.get_data())
+    #     print(d.get_losts())
+    # assert msg == d.get_data()
+    # print(d.is_done())
+    # print(len(msg))
+    # print(len(d.get_data()))
