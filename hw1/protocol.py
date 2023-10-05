@@ -23,82 +23,92 @@ class UDPBasedProtocol:
 class Bufferizer:
     def __init__(self, data: bytes) -> None:
         self.window_size = 10
-        self.magic_seq = b'annndruha'
+        self.magic_sep = b'annndruha'
+        self.sn_sep = bytes('/', encoding="UTF-8")
         self.data = data
         self.data_len = len(data)
         if self.data_len % self.window_size != 0:
             self.total_parts = self.data_len // self.window_size + 1
         else:
             self.total_parts = self.data_len // self.window_size
-        print(self.total_parts)
 
     def __getitem__(self, i):
         part = bytearray()
         part.extend(bytes(str(i+1), encoding="UTF-8"))
-        part.extend(bytes('/', encoding="UTF-8"))
+        part.extend(self.sn_sep)
         part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
-        part.extend(self.magic_seq)
+        part.extend(self.magic_sep)
         part.extend(self.data[i*self.window_size:(i+1)*self.window_size])
         return part
+
+    def __iter__(self):
+        for i in range(self.total_parts):
+            # print(self[i])
+            yield self[i]
 
 
 
 class DeBufferizer:
     def __init__(self) -> None:
-        pass
+        self.window_size = 10
+        self.magic_seq = b'annndruha'
+        self.sn_sep = bytes('/', encoding="UTF-8")
+        self.data_arr = {}
+        self.total_parts = None
+
+    def add_part(self, unknown_part):
+        meta, _, part_data = unknown_part.partition(self.magic_seq)
+
+        sequence_number, _, total_parts = meta.partition(self.sn_sep)
+        if self.total_parts is None:
+            self.total_parts = int(total_parts)
+        else:
+            assert self.total_parts == int(total_parts)
+        
+        self.data_arr[int(sequence_number)] = part_data
+
+    def is_done(self) -> bool:
+        return len(self.data_arr) == self.total_parts
+
+    # def get_one_lost(self):
 
 
+    def get_data(self):
+        data = bytearray()
+        for i in range(1, self.total_parts+1):
+            data.extend(self.data_arr[i])
+        return bytes(data)
 
 
-class Packet:
-    def __init__(self, data: bytes) -> None:
-        self.N = 256
-        self.id = None
-        self.data = data
-
-    def serialize(self):
-        self.id = random.randbytes(self.N)
-        packet_data = bytearray()
-        packet_data.extend(self.id)
-        packet_data.extend(self.data)
-        return packet_data
-
-    def load(self, packet_data: bytes):
-        self.id = packet_data[:self.N]
-        self.data = bytes(packet_data[self.N:])
-        return self.data
-
-
-class MyTCPProtocol(UDPBasedProtocol):  # Ограничение UDP пакета 65к байт
+class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
-        self.buffer_size = 2 ** 16
+        self.max_size = 2 ** 16
         super().__init__(*args, **kwargs)
-        # self.seen_ids = set()
 
-    def send(self, data: bytes):  # Отправлять произвольную длину
-        print(f'send len {len(data)}')
-        packet = Packet(data)
-        packet_data = packet.serialize()
-        # for i in range(5):
-        send_bytes = self.sendto(packet_data)
-        # assert send_bytes == len(packet_data)
+    def send(self, data: bytes):
+        # print(f'send len {len(data)}')
+        b = Bufferizer(data)
+        for data_part in b:
+            send_bytes = self.sendto(data_part)
         return len(data)
 
-    def recv(self, n: int):  # n - макимальная длиная получаемых данных
-        # while True:
-        print(f'recv len {n}')
-        packet_data = self.recvfrom(self.buffer_size)
-        packet = Packet(b'')
-        packet.load(packet_data)
-            # if packet.id not in self.seen_ids:
-                # self.seen_ids.add(packet.id)
-        return packet.data
+    def recv(self, n: int):
+        # print(f'recv len {n}')
+        d = DeBufferizer()
+        while not d.is_done():
+            data_part = self.recvfrom(self.max_size)
+            d.add_part(data_part)
+        return d.get_data()
 
 
 if __name__ == "__main__":
-    # from protocol_test import setup_netem, run_echo_test
-    # setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
-    # run_echo_test(iterations=1, msg_size=5153)
-    b = Bufferizer(b'a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z')
-    for i in range(b.total_parts):
-        print(b[i])
+    from protocol_test import setup_netem, run_echo_test
+    setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
+    run_echo_test(iterations=1, msg_size=5153)
+    # b = Bufferizer(b'a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z')
+    # d = DeBufferizer()
+    # print('init ', d.is_done())
+    # for part in b:
+    #     d.add_part(part)
+    #     print(d.is_done())
+    # print(d.get_data())
