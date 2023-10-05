@@ -1,6 +1,7 @@
 import socket
 import json
 import base64
+import os
 import random
 
 
@@ -16,6 +17,37 @@ class UDPBasedProtocol:
     def recvfrom(self, n):
         msg, addr = self.udp_socket.recvfrom(n)
         return msg
+
+
+
+class Bufferizer:
+    def __init__(self, data: bytes) -> None:
+        self.window_size = 10
+        self.magic_seq = b'annndruha'
+        self.data = data
+        self.data_len = len(data)
+        if self.data_len % self.window_size != 0:
+            self.total_parts = self.data_len // self.window_size + 1
+        else:
+            self.total_parts = self.data_len // self.window_size
+        print(self.total_parts)
+
+    def __getitem__(self, i):
+        part = bytearray()
+        part.extend(bytes(str(i+1), encoding="UTF-8"))
+        part.extend(bytes('/', encoding="UTF-8"))
+        part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
+        part.extend(self.magic_seq)
+        part.extend(self.data[i*self.window_size:(i+1)*self.window_size])
+        return part
+
+
+
+class DeBufferizer:
+    def __init__(self) -> None:
+        pass
+
+
 
 
 class Packet:
@@ -41,35 +73,32 @@ class MyTCPProtocol(UDPBasedProtocol):  # Ограничение UDP пакет�
     def __init__(self, *args, **kwargs):
         self.buffer_size = 2 ** 16
         super().__init__(*args, **kwargs)
-        self.seen_ids = set()
+        # self.seen_ids = set()
 
     def send(self, data: bytes):  # Отправлять произвольную длину
+        print(f'send len {len(data)}')
         packet = Packet(data)
         packet_data = packet.serialize()
-        for i in range(5):
-            send_bytes = self.sendto(packet_data)
-            assert send_bytes == len(packet_data)
+        # for i in range(5):
+        send_bytes = self.sendto(packet_data)
+        # assert send_bytes == len(packet_data)
         return len(data)
 
     def recv(self, n: int):  # n - макимальная длиная получаемых данных
-        while True:
-            packet_data = self.recvfrom(self.buffer_size)
-            packet = Packet(b'')
-            packet.load(packet_data)
-            if packet.id not in self.seen_ids:
-                self.seen_ids.add(packet.id)
-                return packet.data
+        # while True:
+        print(f'recv len {n}')
+        packet_data = self.recvfrom(self.buffer_size)
+        packet = Packet(b'')
+        packet.load(packet_data)
+            # if packet.id not in self.seen_ids:
+                # self.seen_ids.add(packet.id)
+        return packet.data
 
 
 if __name__ == "__main__":
-    data = b'777dsgsdgsdgsdgsdgsdgs334943'
-    print('Send', data)
-    p = Packet(data)
-    packet_data = p.serialize()
-    print('Transfer', packet_data)
-    recv = Packet(b'').load(packet_data)
-    print('Recv', recv)
-
-# Запускать доп потоки на отправку и получение пакетов
-# буферы получения, буферы отправки
-# send и read будут заниматься тем что будут писать в буферы и читать оттуда
+    # from protocol_test import setup_netem, run_echo_test
+    # setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
+    # run_echo_test(iterations=1, msg_size=5153)
+    b = Bufferizer(b'a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z')
+    for i in range(b.total_parts):
+        print(b[i])
