@@ -86,20 +86,24 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
 
     def send(self, data: bytes):
-        b = Bufferizer(data)
-        for data_part in b:
-            self.sendto(data_part)
-            print("========SEND:", bytes(data_part))
+        # b = Bufferizer(data)
+        # for data_part in b:
+        #     self.sendto(data_part)
+        #     print("========SEND:", bytes(data_part))
+        self.sendto(data)
+        print("========SEND============", bytes(data))
         return len(data)
 
     def recv(self, n: int):
-        d = DeBufferizer()
-        while not d.is_done():
-            data_part = self.recvfrom(self.max_size)
-            print("========RECV:", bytes(data_part))
-            d.add_part(data_part)
-            # print(data_part, d.get_losts())
-        return d.get_data()
+        # d = DeBufferizer()
+        # while not d.is_done():
+        #     data_part = self.recvfrom(self.max_size)
+        #     print("========RECV:", bytes(data_part))
+        #     d.add_part(data_part)
+        # return d.get_data()
+        data = self.recvfrom(self.max_size)
+        print("========RECV============", bytes(data))
+        return data
 
 
 if __name__ == "__main__":
