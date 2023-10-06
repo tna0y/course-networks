@@ -19,12 +19,16 @@ class UDPBasedProtocol:
         return msg
 
 
+class BufferSettings:
+    window_size = 2**12
+    magic_sep = b'annndruha'
+    sn_sep = bytes('/', encoding="UTF-8")
 
-class Bufferizer:
+
+class Bufferizer(BufferSettings):
     def __init__(self, data: bytes) -> None:
-        self.window_size = 2**12
-        self.magic_sep = b'annndruha'
-        self.sn_sep = bytes('/', encoding="UTF-8")
+        super().__init__()
+
         self.data = data
         self.data_len = len(data)
         if self.data_len % self.window_size != 0:
@@ -50,18 +54,18 @@ class Bufferizer:
 
 
 
-class DeBufferizer:
+class DeBufferizer(BufferSettings):
     def __init__(self) -> None:
-        self.window_size = 2**12
-        self.magic_seq = b'annndruha'
-        self.sn_sep = bytes('/', encoding="UTF-8")
+        # super(DeBufferizer, self).__init__()
+        # super().__init__()
+        super().__init__()
         self.data_arr = {}
         self.total_parts = None
 
     def add_part(self, unknown_part):
-        meta, _, part_data = unknown_part.partition(self.magic_seq)
+        meta, _, part_data = unknown_part.partition(self.magic_sep)
         sequence_number, _, total_parts = meta.partition(self.sn_sep)
-        data_id, _, part_data = part_data.partition(self.magic_seq)
+        data_id, _, part_data = part_data.partition(self.magic_sep)
 
         # print(f"REC PART ===", data_id.hex(), int(sequence_number),"/", int(total_parts), part_data.hex())
 
@@ -73,9 +77,9 @@ class DeBufferizer:
             assert self.total_parts == int(total_parts)
     
     def get_id(self, unknown_part):
-        meta, _, part_data = unknown_part.partition(self.magic_seq)
+        meta, _, part_data = unknown_part.partition(self.magic_sep)
         sequence_number, _, total_parts = meta.partition(self.sn_sep)
-        data_id, _, part_data = part_data.partition(self.magic_seq)
+        data_id, _, part_data = part_data.partition(self.magic_sep)
         return data_id.hex()
 
     def is_done(self) -> bool:
@@ -104,8 +108,9 @@ class MyTCPProtocol(UDPBasedProtocol):
         b = Bufferizer(data)
         for data_part in b:
             # print(f"NEW PART ===", data.hex())
-            # self.sendto(data_part)
             self.sendto(data_part)
+            # self.sendto(data_part)
+            # self.sendto(data_part)
         # self.sendto(data)
         # print("========SEND============", bytes(data))
         return len(data)
@@ -134,7 +139,7 @@ if __name__ == "__main__":
 
 
     setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
-    run_echo_test(iterations=2, msg_size=10000000)
+    run_echo_test(iterations=2, msg_size=10000)
 
 
 
