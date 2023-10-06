@@ -27,14 +27,11 @@ class BufferSettings:
 class Bufferizer(BufferSettings):
     def __init__(self, data: bytes) -> None:
         super().__init__()
-
         self.data = data
-        self.data_len = len(data)
-        if self.data_len % self.window_size != 0:
-            self.total_parts = self.data_len // self.window_size + 1
+        if len(data) % self.window_size != 0:
+            self.total_parts = len(data) // self.window_size + 1
         else:
-            self.total_parts = self.data_len // self.window_size
-        print('TOTAL PARTS', self.total_parts)
+            self.total_parts = len(data) // self.window_size
 
     def __getitem__(self, i):
         part = bytearray()
@@ -72,62 +69,38 @@ class DeBufferizer(BufferSettings):
                 self.total_parts = int(total_parts)
             else:
                 assert self.total_parts == int(total_parts)
-    
-    # def get_id(self, unknown_part):
-    #     sequence_number, _, tail = unknown_part.partition(self.magic_sep)
-    #     total_parts, _, tail = tail.partition(self.magic_sep)
-    #     data_id, _, part_data = tail.partition(self.magic_sep)
-    #     return data_id.hex()
 
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
 
-    def get_losts(self):
+    def get_one_lost(self):
         return set(range(1, self.total_parts+1)) - set(self.data_arr.keys())
 
     def get_data(self):
         data = bytearray()
         for i in range(1, self.total_parts+1):
             data.extend(self.data_arr[i])
-        self.data_arr = {}
-        self.total_parts = None
-        # self.seen_ids = []
         return bytes(data)
 
 
 class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
-        self.max_size = 2 ** 32
         super().__init__(*args, **kwargs)
         self.seen_ids = []
+        self.max_size = 2 ** 32
 
     def send(self, data: bytes):
         b = Bufferizer(data)
         for data_part in b:
-            # print(f"NEW PART ===", data.hex())
             self.sendto(data_part)
-            self.sendto(data_part)
-            self.sendto(data_part)
-        # self.sendto(data)
-        # print("========SEND============", bytes(data))
         return len(data)
 
     def recv(self, n: int):
         d = DeBufferizer()
         while not d.is_done():
-            print('====')
             data_part = self.recvfrom(self.max_size)
             d.add_part(data_part, self.seen_ids)
-
-            # part_id = d.get_id(data_part)
-            # if part_id not in self.seen_ids:
-            #     d.add_part(data_part, self.seen_ids)
-            #     self.seen_ids.append(part_id)
-            #     print(len(self.seen_ids))
         return d.get_data()
-        # data = self.recvfrom(self.max_size)
-        # print("========RECV============", bytes(data))
-        # return data
 
 
 if __name__ == "__main__":
@@ -136,24 +109,19 @@ if __name__ == "__main__":
     # setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
     # run_echo_test(iterations=2, msg_size=msg_size)
 
+    # setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
+    # run_echo_test(iterations=2, msg_size=16)
 
-    setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
-    run_echo_test(iterations=2, msg_size=16)
+    setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
+    run_echo_test(iterations=5000, msg_size=14)
 
+    # seen_ids = []
+    # msg = b'\xdc\xf5\x06P\xce\x9eZ\xd9\xcf\x10\xa5\xa4\r'
+    # msg = os.urandom(10_000_000)
 
-
-
-    # msg = b'\xdc\xf5\x06P\xce\x9eZ\xd9\xcf\x10\xa5\xa4\r' # os.urandom(100)
     # b = Bufferizer(msg)
     # d = DeBufferizer()
     # for part in b:
-    #     d.add_part(part)
-    #     # print(part)
-    #     # print(d.get_losts())
+    #     d.add_part(part, seen_ids)
     # assert msg == d.get_data()
-    # # print(d.get_data())
-    # # print(msg)
     # print(d.is_done())
-    # # print(d.data_id)
-    # # print(len(msg))
-    # # print(len(d.get_data()))
