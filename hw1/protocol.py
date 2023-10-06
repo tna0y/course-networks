@@ -71,11 +71,12 @@ class DeBufferizer(BufferSettings):
                 self.total_parts = int(total_parts)
             else:
                 assert self.total_parts == int(total_parts)
-            if len(self.data_arr) > current_data_len:
-                return True
 
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
+
+    def is_handshaked(self) -> bool:
+        return len(self.data_arr) > 0
 
     def losts(self):
         if self.total_parts is None:
@@ -94,50 +95,90 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
         self.seen_ids = []
         self.max_size = 2 ** 32
-        self.udp_socket.settimeout(0.001)
+        self.udp_socket.settimeout(0.1)
 
     def send(self, data: bytes):
         b = Bufferizer(data)
-        for data_part in b:
-            while True:
-                try:
-                    self.sendto(data_part)
-                    resp = self.recvfrom(self.max_size)
-                    if resp == b'END':
-                        break
-                    if resp == b'DONE':
-                        break
-                    if resp == b'REPEAT':
+        handshake = b'HANDSHAKEPARTS_' + bytes(str(b.total_parts), encoding="UTF-8")
+
+        while True:
+            try:
+                self.sendto(handshake)
+                resp = self.recvfrom(self.max_size)
+                if not resp.startswith(b'HANDSHAKE'):
+                    break
+            except TimeoutError:
+                pass
+
+        print('send handshake ok')
+        transmission_end = False
+        while not transmission_end:
+            try:
+                resp = self.recvfrom(self.max_size)
+                print(resp)
+                if resp.startswith(b'GETALL'):
+                    for data_part in b:
                         self.sendto(data_part)
-                        break
-                except TimeoutError:
-                    # print('TO Err')
-                    pass
+                elif resp == b'END':
+                    transmission_end = True
+                else:
+                    self.sendto(b'PENDING')
+
+            except TimeoutError:
+                pass
 
         return len(data)
 
     def recv(self, n: int):
         d = DeBufferizer()
+
+        while True:
+            handshake = self.recvfrom(self.max_size)
+            if handshake.startswith(b'HANDSHAKEPARTS_'):
+                total_parts = int(handshake.removeprefix(b'HANDSHAKEPARTS_'))
+                d.total_parts = total_parts
+                break
+            else:
+                break
+
+        print('recv handshake ok total_parts=', d.total_parts)
+
         while not d.is_done():
             try:
                 data_part = self.recvfrom(self.max_size)
-                if data_part == b'END':
-                    pass
-                elif data_part == b'DONE':
-                    pass
-                elif data_part == b'REPEAT':
+                print(data_part)
+                if data_part.startswith(b'HANDSHAKEPARTS_'):
+                    self.sendto(b'GETALL')
+                elif data_part.startswith(b'PENDING'):
+                    self.sendto(b'GETALL')
+                elif data_part.startswith(b'END'):
                     pass
                 else:
-                    is_new_part = d.add_part(data_part, self.seen_ids)
-                    if is_new_part:
-                        print('is_new')
-                        self.sendto(b'DONE')
-                    else:
-                        print('is_old')
-                        self.sendto(b'REPEAT')
+                    d.add_part(data_part, self.seen_ids)
             except TimeoutError:
-                pass
-        for _ in range(50):
+                self.sendto(b'GETALL')
+
+
+        # while not d.is_done():
+        #     try:
+        #         data_part = self.recvfrom(self.max_size)
+        #         print('data_part', data_part)
+
+        #         if data_part.startswith(b'HANDSHAKEPARTS'):
+        #             print('send get')
+        #             self.sendto(b'GET')
+        #         elif data_part == b'END':
+        #             pass
+        #         else:
+        #             is_new_part = d.add_part(data_part, self.seen_ids)
+        #             # print(is_new_part)
+        #             # if is_new_part:
+        #             #     self.sendto(b'DONE')
+        #             # else:
+        #             #     self.sendto(b'REPEAT')
+        #     except TimeoutError:
+        #         self.sendto(b'GET')
+        for _ in range(20):
             self.sendto(b'END')
         return d.get_data()
         
@@ -157,7 +198,7 @@ if __name__ == "__main__":
     # run_echo_test(iterations=5000, msg_size=14)
     # os.system(f"tc qdisc replace dev lo root netem loss 0% duplicate 0% reorder 0% delay 0ms")
     setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
-    run_echo_test(iterations=1000, msg_size=14)
+    run_echo_test(iterations=1, msg_size=14)
     # os.system(f"tc qdisc replace dev lo root netem loss 0% duplicate 0% reorder 0% delay 0ms")
 
     # seen_ids = []
