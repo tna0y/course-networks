@@ -20,7 +20,7 @@ class UDPBasedProtocol:
 
 
 class BufferSettings:
-    window_size = 2**12
+    window_size = 2**5
     magic_sep = b'SEP'
 
 
@@ -35,7 +35,7 @@ class Bufferizer(BufferSettings):
 
     def __getitem__(self, i):
         part = bytearray()
-        part.extend(bytes(str(i+1), encoding="UTF-8"))
+        part.extend(bytes(str(i), encoding="UTF-8"))
         part.extend(self.magic_sep)
         part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
         part.extend(self.magic_sep)
@@ -56,19 +56,17 @@ class DeBufferizer(BufferSettings):
         self.data_arr = {}
         self.total_parts = None
 
-    def add_part(self, unknown_part, seen_ids):
+    def add_part(self, unknown_part):
         sequence_number, _, tail = unknown_part.partition(self.magic_sep)
         total_parts, _, tail = tail.partition(self.magic_sep)
         data_id, _, part_data = tail.partition(self.magic_sep)
 
-        # print(f"REC PART ===", data_id.hex(), int(sequence_number),"/", int(total_parts), part_data.hex())
-        # if data_id not in seen_ids:
-        #     seen_ids.append(data_id)
         self.data_arr[int(sequence_number)] = part_data
         if self.total_parts is None:
             self.total_parts = int(total_parts)
         else:
             assert self.total_parts == int(total_parts)
+        return int(sequence_number)
 
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
@@ -76,7 +74,7 @@ class DeBufferizer(BufferSettings):
     def get_one_lost(self):
         if self.total_parts is None:
             return 'init'
-        losts = list(set(range(1, self.total_parts+1)) - set(self.data_arr.keys()))
+        losts = list(set(range(self.total_parts)) - set(self.data_arr.keys()))
         if len(losts) > 0:
             return losts[0]
         elif len(losts) == 0:
@@ -84,17 +82,24 @@ class DeBufferizer(BufferSettings):
 
     def get_data(self):
         data = bytearray()
-        for i in range(1, self.total_parts+1):
+        for i in range(self.total_parts):
             data.extend(self.data_arr[i])
         return bytes(data)
+
+
+def get_id(unknown_part):
+    sequence_number, _, tail = unknown_part.partition(b'SEP')
+    total_parts, _, tail = tail.partition(b'SEP')
+    data_id, _, part_data = tail.partition(b'SEP')
+    return data_id
 
 
 class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.seen_ids = []
         self.max_size = 2 ** 32
-        self.udp_socket.settimeout(0.001)
+        self.udp_socket.settimeout(0.01)
+        self.seen_ids = []
 
     def send(self, data: bytes):
         b = Bufferizer(data)
@@ -103,16 +108,17 @@ class MyTCPProtocol(UDPBasedProtocol):
         while True:
             try:
                 resp = self.recvfrom(self.max_size)
+                print('send resp', resp)
                 if resp == b'END':
                     # print('send end')
                     return len(data)
                 if resp == b'PENDING':
                     self.sendto(b[0])
-                    # print('send pending')
+                    # print('send pending here')
                 if resp.startswith(b'GET'):
                     lost_part = int(resp.removeprefix(b'GET'))
                     self.sendto(b[lost_part])
-                    # print(f'send {lost_part}')
+                    print(f'send {lost_part} {b[lost_part]}')
             except TimeoutError:
                 # print('send pending')
                 self.sendto(b'PENDING')
@@ -121,12 +127,14 @@ class MyTCPProtocol(UDPBasedProtocol):
 
     def recv(self, n: int):
         d = DeBufferizer()
-        i = 0
         while not d.is_done():
-            i += 1
             try:
                 data_part = self.recvfrom(self.max_size)
-                # print('recv resp', data_part)
+                id = get_id(data_part)
+                if id in self.seen_ids:
+                    continue
+                print('recv resp', data_part)
+                self.seen_ids.append(id)
                 if data_part == b'END':
                     # print('recv end')
                     pass
@@ -136,24 +144,26 @@ class MyTCPProtocol(UDPBasedProtocol):
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
-                        self.sendto(b'END')
+                        for _ in range(20):
+                            self.sendto(b'END')
                     else:
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
                 else:
-                    # print(f'add data {i}')
-                    d.add_part(data_part, self.seen_ids)
+                    add_number = d.add_part(data_part)
                     lost_status = d.get_one_lost()
+                    print(f'add data {add_number} lost_status: {lost_status}')
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
-                        self.sendto(b'END')
+                        for _ in range(20):
+                            self.sendto(b'END')
                     else:
+                        print(f'recv get {str(lost_status)}')
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
             except TimeoutError:
-                # print('recv pending')
+                print('recv pending')
                 self.sendto(b'PENDING')
-        # for _ in range(20):
-            # self.sendto(b'END')
+        
         return d.get_data()
         
         
@@ -161,30 +171,23 @@ class MyTCPProtocol(UDPBasedProtocol):
 
 if __name__ == "__main__":
     from protocol_test import setup_netem, run_echo_test
-    # msg_size = 10_000_000
-    # setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
-    # run_echo_test(iterations=2, msg_size=msg_size)
-
-    # setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
-    # run_echo_test(iterations=2, msg_size=16)
-
-    # setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
-    # run_echo_test(iterations=5000, msg_size=14)
-    # os.system(f"tc qdisc replace dev lo root netem loss 0% duplicate 0% reorder 0% delay 0ms")
-    setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
+    setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     run_echo_test(iterations=2, msg_size=100_000)
-    # os.system(f"tc qdisc replace dev lo root netem loss 0% duplicate 0% reorder 0% delay 0ms")
 
-    # seen_ids = []
-    # msg = b'\xdc\xf5\x06P\xce\x9eZ\xd9\xcf\x10\xa5\xa4\r'
-    # msg = os.urandom(10_000_000)
 
+
+    # msg = os.urandom(10000)
     # b = Bufferizer(msg)
+    # print(b.total_parts)
     # d = DeBufferizer()
-    # for part in b:
-    #     d.add_part(part, seen_ids)
-    # assert msg == d.get_data()
-    # print(d.is_done())
+    # print(d.get_one_lost())
+    # print(b[0])
+    # d.add_part(b[0])
+    # lost = d.get_one_lost()
+    # print(lost, b[lost])
+    # d.add_part(b[lost])
+    # lost = d.get_one_lost()
+    # print(lost, b[lost])
 
 
 # Сброс кривых параметров (из-за которых в том числе может отваливаться VSCode remote)
