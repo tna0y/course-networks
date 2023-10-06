@@ -34,12 +34,13 @@ class Bufferizer(BufferSettings):
             self.total_parts = len(data) // self.window_size
 
     def __getitem__(self, i):
+        id = os.urandom(48)
         part = bytearray()
         part.extend(bytes(str(i+1), encoding="UTF-8"))
         part.extend(self.magic_sep)
         part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
         part.extend(self.magic_sep)
-        part.extend(os.urandom(48))
+        part.extend(id)
         part.extend(self.magic_sep)
         part.extend(self.data[i*self.window_size:(i+1)*self.window_size])
         return part
@@ -57,6 +58,7 @@ class DeBufferizer(BufferSettings):
         self.total_parts = None
 
     def add_part(self, unknown_part, seen_ids):
+        current_data_len = len(self.data_arr)
         sequence_number, _, tail = unknown_part.partition(self.magic_sep)
         total_parts, _, tail = tail.partition(self.magic_sep)
         data_id, _, part_data = tail.partition(self.magic_sep)
@@ -69,7 +71,8 @@ class DeBufferizer(BufferSettings):
                 self.total_parts = int(total_parts)
             else:
                 assert self.total_parts == int(total_parts)
-            print('TP', self.total_parts)
+            if len(self.data_arr) > current_data_len:
+                return True
 
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
@@ -91,47 +94,52 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
         self.seen_ids = []
         self.max_size = 2 ** 32
+        self.udp_socket.settimeout(0.001)
 
     def send(self, data: bytes):
         b = Bufferizer(data)
         for data_part in b:
-            self.sendto(data_part)
+            while True:
+                try:
+                    self.sendto(data_part)
+                    resp = self.recvfrom(self.max_size)
+                    if resp == b'END':
+                        break
+                    if resp == b'DONE':
+                        break
+                    if resp == b'REPEAT':
+                        self.sendto(data_part)
+                        break
+                except TimeoutError:
+                    # print('TO Err')
+                    pass
 
-        # recv_done = False
-        # while not recv_done:
-        #     data = self.recvfrom(self.max_size)
-        #     if data.startswith(b'ASK'):
-        #         print('SENER NOTIFICATED')
-        #     elif data.startswith(b'DONE'):
-        #         recv_done = True
         return len(data)
 
     def recv(self, n: int):
         d = DeBufferizer()
-        data_part = self.recvfrom(self.max_size)
-        if not data_part.startswith(b'ASK') and not data_part.startswith(b'DONE'):
-            d.add_part(data_part, self.seen_ids)
-            while len(d.losts()) > 0:
-                ask_part = bytearray()
-                ask_part.extend(b'ASK')
-                ask_part.extend(bytes(str(d.losts()[0]), encoding="UTF-8"))
-                self.sendto(ask_part)
-
-            return d.get_data()
-        elif data_part.startswith(b'ASK'):
-            return data_part
-        elif data_part.startswith(b'DONE'):
-            return data_part
-        
-        # while not d.is_done():
-        #     if len(d.get_one_lost()) > 0:
-        #         lost_part = d.get_one_lost()
-        #         ask_for_lost = bytearray()
-        #         ask_for_lost.extend(b'ASK')
-        #         ask_for_lost.extend(lost_part[0])
-        #         self.sendto(ask_for_lost)
-        #     else:
-        #         print('WTF???')
+        while not d.is_done():
+            try:
+                data_part = self.recvfrom(self.max_size)
+                if data_part == b'END':
+                    pass
+                elif data_part == b'DONE':
+                    pass
+                elif data_part == b'REPEAT':
+                    pass
+                else:
+                    is_new_part = d.add_part(data_part, self.seen_ids)
+                    if is_new_part:
+                        print('is_new')
+                        self.sendto(b'DONE')
+                    else:
+                        print('is_old')
+                        self.sendto(b'REPEAT')
+            except TimeoutError:
+                pass
+        for _ in range(50):
+            self.sendto(b'END')
+        return d.get_data()
         
         
 
@@ -147,9 +155,10 @@ if __name__ == "__main__":
 
     # setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
     # run_echo_test(iterations=5000, msg_size=14)
-
-    setup_netem(packet_loss=0.7, duplicate=0.02, reorder=0.01)
-    run_echo_test(iterations=2, msg_size=10)
+    # os.system(f"tc qdisc replace dev lo root netem loss 0% duplicate 0% reorder 0% delay 0ms")
+    setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
+    run_echo_test(iterations=1000, msg_size=14)
+    # os.system(f"tc qdisc replace dev lo root netem loss 0% duplicate 0% reorder 0% delay 0ms")
 
     # seen_ids = []
     # msg = b'\xdc\xf5\x06P\xce\x9eZ\xd9\xcf\x10\xa5\xa4\r'
