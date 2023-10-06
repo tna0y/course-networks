@@ -21,8 +21,7 @@ class UDPBasedProtocol:
 
 class BufferSettings:
     window_size = 2**12
-    magic_sep = b'annndruha'
-    sn_sep = bytes('/', encoding="UTF-8")
+    magic_sep = b'SEP'
 
 
 class Bufferizer(BufferSettings):
@@ -35,12 +34,12 @@ class Bufferizer(BufferSettings):
             self.total_parts = self.data_len // self.window_size + 1
         else:
             self.total_parts = self.data_len // self.window_size
-        print(self.total_parts)
+        print('TOTAL PARTS', self.total_parts)
 
     def __getitem__(self, i):
         part = bytearray()
         part.extend(bytes(str(i+1), encoding="UTF-8"))
-        part.extend(self.sn_sep)
+        part.extend(self.magic_sep)
         part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
         part.extend(self.magic_sep)
         part.extend(os.urandom(48))
@@ -56,31 +55,29 @@ class Bufferizer(BufferSettings):
 
 class DeBufferizer(BufferSettings):
     def __init__(self) -> None:
-        # super(DeBufferizer, self).__init__()
-        # super().__init__()
         super().__init__()
         self.data_arr = {}
         self.total_parts = None
 
-    def add_part(self, unknown_part):
-        meta, _, part_data = unknown_part.partition(self.magic_sep)
-        sequence_number, _, total_parts = meta.partition(self.sn_sep)
-        data_id, _, part_data = part_data.partition(self.magic_sep)
+    def add_part(self, unknown_part, seen_ids):
+        sequence_number, _, tail = unknown_part.partition(self.magic_sep)
+        total_parts, _, tail = tail.partition(self.magic_sep)
+        data_id, _, part_data = tail.partition(self.magic_sep)
 
         # print(f"REC PART ===", data_id.hex(), int(sequence_number),"/", int(total_parts), part_data.hex())
-
-        self.data_arr[int(sequence_number)] = part_data
-
-        if self.total_parts is None:
-            self.total_parts = int(total_parts)
-        else:
-            assert self.total_parts == int(total_parts)
+        if data_id not in seen_ids:
+            seen_ids.append(data_id)
+            self.data_arr[int(sequence_number)] = part_data
+            if self.total_parts is None:
+                self.total_parts = int(total_parts)
+            else:
+                assert self.total_parts == int(total_parts)
     
-    def get_id(self, unknown_part):
-        meta, _, part_data = unknown_part.partition(self.magic_sep)
-        sequence_number, _, total_parts = meta.partition(self.sn_sep)
-        data_id, _, part_data = part_data.partition(self.magic_sep)
-        return data_id.hex()
+    # def get_id(self, unknown_part):
+    #     sequence_number, _, tail = unknown_part.partition(self.magic_sep)
+    #     total_parts, _, tail = tail.partition(self.magic_sep)
+    #     data_id, _, part_data = tail.partition(self.magic_sep)
+    #     return data_id.hex()
 
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
@@ -109,8 +106,8 @@ class MyTCPProtocol(UDPBasedProtocol):
         for data_part in b:
             # print(f"NEW PART ===", data.hex())
             self.sendto(data_part)
-            # self.sendto(data_part)
-            # self.sendto(data_part)
+            self.sendto(data_part)
+            self.sendto(data_part)
         # self.sendto(data)
         # print("========SEND============", bytes(data))
         return len(data)
@@ -120,11 +117,13 @@ class MyTCPProtocol(UDPBasedProtocol):
         while not d.is_done():
             print('====')
             data_part = self.recvfrom(self.max_size)
-            part_id = d.get_id(data_part)
-            if part_id not in self.seen_ids:
-                d.add_part(data_part)
-                self.seen_ids.append(part_id)
-                print(len(self.seen_ids))
+            d.add_part(data_part, self.seen_ids)
+
+            # part_id = d.get_id(data_part)
+            # if part_id not in self.seen_ids:
+            #     d.add_part(data_part, self.seen_ids)
+            #     self.seen_ids.append(part_id)
+            #     print(len(self.seen_ids))
         return d.get_data()
         # data = self.recvfrom(self.max_size)
         # print("========RECV============", bytes(data))
@@ -139,7 +138,7 @@ if __name__ == "__main__":
 
 
     setup_netem(packet_loss=0.00, duplicate=0.00, reorder=0.00)
-    run_echo_test(iterations=2, msg_size=10000)
+    run_echo_test(iterations=2, msg_size=16)
 
 
 
