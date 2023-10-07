@@ -64,12 +64,7 @@ class DeBufferizer(BufferSettings):
         data_id, _, part_data = tail.partition(self.magic_sep)
 
         self.data_arr[int(sequence_number)] = part_data
-        if self.id is None:
-            self.id = data_id
-        elif self.id == data_id:
-            pass
-        else:
-            raise ValueError(data_id)
+        self.id = data_id
         if self.total_parts is None:
             self.total_parts = int(total_parts)
         else:
@@ -106,8 +101,8 @@ class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_size = 2 ** 32
-        self.udp_socket.settimeout(0.1)
-        self.broken_ids = []
+        self.udp_socket.settimeout(0.01)
+        self.seen_ids = list()
 
     def send(self, data: bytes):
         b = Bufferizer(data)
@@ -120,43 +115,31 @@ class MyTCPProtocol(UDPBasedProtocol):
         while True:
             try:
                 resp = self.recvfrom(self.max_size)
-                # print('send resp', resp)
                 if resp.startswith(b'END'):
                     if b.id == resp.removeprefix(b'END'):
                         return len(data)
-                # elif resp.startswith(b'PENDING'):
-
-                
+                elif resp == b'PENDING':
+                    self.sendto(b[0])
                 elif resp.startswith(b'GET'):
                     lost_part = int(resp.removeprefix(b'GET'))
                     self.sendto(b[lost_part])
-                    # print(f'send {lost_part} {b[lost_part]}')
                 else:
-                    print('else', resp)
-                    return len(data)
-                    # self.broken_ids.append(get_id(resp))
-                    # print('======else', resp)
-                    # id = get_id(resp)
-                    # print(id.hex(), b.id.hex())
-                    # if id == b.id:
-                    #     print('==========================================RET')
-                    #     return len(data)
+                    print('HMMMMMMMM==============')
             except TimeoutError:
-                self.sendto(b[0])
+                self.sendto(b'PENDING')
 
         return len(data)
 
     def recv(self, n: int):
         def abort(id):
-            for _ in range(1):
+            for _ in range(10):
                 self.sendto(b'END' + id)
 
         d = DeBufferizer()
 
         try:
             data_part = self.recvfrom(self.max_size)
-            print('recv 1data', data_part)
-            if not data_part.startswith(b'END') and not data_part.startswith(b'PENDING') and not data_part.startswith(b'GET'):
+            if not data_part.startswith(b'END') and data_part != b'PENDING' and not data_part.startswith(b'GET'):
                 d.add_part(data_part)
                 if d.is_done():
                     abort(d.id)
@@ -167,36 +150,31 @@ class MyTCPProtocol(UDPBasedProtocol):
         while not d.is_done():
             try:
                 data_part = self.recvfrom(self.max_size)
-                print('recv data', data_part)
                 if data_part.startswith(b'END'):
                     pass
                 elif data_part.startswith(b'GET'):
                     pass
-                else:
-                    try:
-                        add_number = d.add_part(data_part)
-                    except ValueError as err:
-                        with open('error.txt', 'w+') as f:
-                            f.write(repr(err))
-                        continue
+                elif data_part == b'PENDING':
                     lost_status = d.get_one_lost()
-                    # print(f'add data {add_number} lost_status: {lost_status}')
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
                         abort(d.id)
                         return d.get_data()
                     else:
-                        # print(f'recv get {str(lost_status)}')
+                        self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
+                else:
+                    add_number = d.add_part(data_part)
+                    lost_status = d.get_one_lost()
+                    if lost_status == 'init':
+                        self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
+                    elif lost_status == 'done':
+                        abort(d.id)
+                        return d.get_data()
+                    else:
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
             except TimeoutError:
-                print('TO')
-                self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
-                # print('recv pending')
-                # self.sendto(b'PENDING' + d.id)
-
-        # for _ in range(20):
-        #     self.sendto(b'END')
+                self.sendto(b'PENDING')
         return d.get_data()
         
         
@@ -208,8 +186,8 @@ if __name__ == "__main__":
     # run_echo_test(iterations=2, msg_size=100_000)
 
 
-    setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
-    run_echo_test(iterations=100, msg_size=17)
+    setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
+    run_echo_test(iterations=50000, msg_size=10)
 
 
 
