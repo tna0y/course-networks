@@ -90,19 +90,11 @@ class DeBufferizer(BufferSettings):
         return bytes(data)
 
 
-def get_id(unknown_part):
-    sequence_number, _, tail = unknown_part.partition(b'SEP')
-    total_parts, _, tail = tail.partition(b'SEP')
-    data_id, _, part_data = tail.partition(b'SEP')
-    return data_id
-
-
 class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_size = 2 ** 32
-        self.udp_socket.settimeout(0.01)
-        self.seen_ids = list()
+        self.udp_socket.settimeout(0.00001)
 
     def send(self, data: bytes):
         b = Bufferizer(data)
@@ -124,7 +116,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                     lost_part = int(resp.removeprefix(b'GET'))
                     self.sendto(b[lost_part])
                 else:
-                    print('HMMMMMMMM==============')
+                    pass
             except TimeoutError:
                 self.sendto(b'PENDING')
 
@@ -132,7 +124,7 @@ class MyTCPProtocol(UDPBasedProtocol):
 
     def recv(self, n: int):
         def abort(id):
-            for _ in range(10):
+            for _ in range(15):
                 self.sendto(b'END' + id)
 
         d = DeBufferizer()
@@ -175,6 +167,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
             except TimeoutError:
                 self.sendto(b'PENDING')
+        abort(d.id)
         return d.get_data()
         
         
