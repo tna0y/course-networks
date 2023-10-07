@@ -102,7 +102,6 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
         self.max_size = 2 ** 32
         self.udp_socket.settimeout(0.01)
-        self.seen_ids = list()
 
     def send(self, data: bytes):
         b = Bufferizer(data)
@@ -134,7 +133,7 @@ class MyTCPProtocol(UDPBasedProtocol):
 
     def recv(self, n: int):
         def abort(id):
-            for _ in range(20):
+            for _ in range(10):
                 self.sendto(b'END' + id)
 
         d = DeBufferizer()
@@ -154,14 +153,7 @@ class MyTCPProtocol(UDPBasedProtocol):
 
             try:
                 data_part = self.recvfrom(self.max_size)
-                # print('recv resp', data_part)
-                # id = get_id(data_part)
-                # if id in self.seen_ids:
-                #     print(f'============continue {len(self.seen_ids)} {d.is_done()}')
-                #     continue
-                # self.seen_ids.append(id)
                 if data_part.startswith(b'END'):
-                    # print('recv end')
                     pass
                 elif data_part.startswith(b'GET'):
                     pass
