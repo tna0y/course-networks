@@ -20,7 +20,7 @@ class UDPBasedProtocol:
 
 
 class BufferSettings:
-    window_size = 2**5
+    window_size = 2**15
     magic_sep = b'SEP'
 
 
@@ -28,6 +28,7 @@ class Bufferizer(BufferSettings):
     def __init__(self, data: bytes) -> None:
         super().__init__()
         self.data = data
+        self.id = os.urandom(24)
         if len(data) % self.window_size != 0:
             self.total_parts = len(data) // self.window_size + 1
         else:
@@ -39,7 +40,7 @@ class Bufferizer(BufferSettings):
         part.extend(self.magic_sep)
         part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
         part.extend(self.magic_sep)
-        part.extend(os.urandom(48))
+        part.extend(self.id)
         part.extend(self.magic_sep)
         part.extend(self.data[i*self.window_size:(i+1)*self.window_size])
         return part
@@ -55,6 +56,7 @@ class DeBufferizer(BufferSettings):
         super().__init__()
         self.data_arr = {}
         self.total_parts = None
+        self.id = None
 
     def add_part(self, unknown_part):
         sequence_number, _, tail = unknown_part.partition(self.magic_sep)
@@ -62,6 +64,7 @@ class DeBufferizer(BufferSettings):
         data_id, _, part_data = tail.partition(self.magic_sep)
 
         self.data_arr[int(sequence_number)] = part_data
+        self.id = data_id
         if self.total_parts is None:
             self.total_parts = int(total_parts)
         else:
@@ -99,26 +102,30 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
         self.max_size = 2 ** 32
         self.udp_socket.settimeout(0.01)
-        self.seen_ids = []
+        self.seen_ids = list()
 
     def send(self, data: bytes):
         b = Bufferizer(data)
-        for part in b:
-            self.sendto(part)
+
+        if b.total_parts == 1:
+            for part in b:
+                self.sendto(part)
+
+
         while True:
             try:
                 resp = self.recvfrom(self.max_size)
-                print('send resp', resp)
-                if resp == b'END':
-                    # print('send end')
-                    return len(data)
+                # print('send resp', resp)
+                if resp.startswith(b'END'):
+                    if b.id == resp.removeprefix(b'END'):
+                        return len(data)
                 if resp == b'PENDING':
                     self.sendto(b[0])
                     # print('send pending here')
                 if resp.startswith(b'GET'):
                     lost_part = int(resp.removeprefix(b'GET'))
                     self.sendto(b[lost_part])
-                    print(f'send {lost_part} {b[lost_part]}')
+                    # print(f'send {lost_part} {b[lost_part]}')
             except TimeoutError:
                 # print('send pending')
                 self.sendto(b'PENDING')
@@ -126,17 +133,37 @@ class MyTCPProtocol(UDPBasedProtocol):
         return len(data)
 
     def recv(self, n: int):
+        def abort(id):
+            for _ in range(20):
+                self.sendto(b'END' + id)
+
         d = DeBufferizer()
+
+        try:
+            data_part = self.recvfrom(self.max_size)
+            if not data_part.startswith(b'END') and data_part != b'PENDING' and not data_part.startswith(b'GET'):
+                d.add_part(data_part)
+                if d.is_done():
+                    abort(d.id)
+                    return d.get_data()
+        except TimeoutError:
+            pass
+
         while not d.is_done():
+
+
             try:
                 data_part = self.recvfrom(self.max_size)
-                id = get_id(data_part)
-                if id in self.seen_ids:
-                    continue
-                print('recv resp', data_part)
-                self.seen_ids.append(id)
-                if data_part == b'END':
+                # print('recv resp', data_part)
+                # id = get_id(data_part)
+                # if id in self.seen_ids:
+                #     print(f'============continue {len(self.seen_ids)} {d.is_done()}')
+                #     continue
+                # self.seen_ids.append(id)
+                if data_part.startswith(b'END'):
                     # print('recv end')
+                    pass
+                elif data_part.startswith(b'GET'):
                     pass
                 elif data_part == b'PENDING':
                     # print('recv pending')
@@ -144,26 +171,27 @@ class MyTCPProtocol(UDPBasedProtocol):
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
-                        for _ in range(20):
-                            self.sendto(b'END')
+                        abort(d.id)
                     else:
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
                 else:
                     add_number = d.add_part(data_part)
                     lost_status = d.get_one_lost()
-                    print(f'add data {add_number} lost_status: {lost_status}')
+                    # print(f'add data {add_number} lost_status: {lost_status}')
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
-                        for _ in range(20):
-                            self.sendto(b'END')
+                        abort(d.id)
+                        return d.get_data()
                     else:
-                        print(f'recv get {str(lost_status)}')
+                        # print(f'recv get {str(lost_status)}')
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
             except TimeoutError:
-                print('recv pending')
+                # print('recv pending')
                 self.sendto(b'PENDING')
-        
+
+        # for _ in range(20):
+        #     self.sendto(b'END')
         return d.get_data()
         
         
@@ -171,8 +199,12 @@ class MyTCPProtocol(UDPBasedProtocol):
 
 if __name__ == "__main__":
     from protocol_test import setup_netem, run_echo_test
+    # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
+    # run_echo_test(iterations=2, msg_size=100_000)
+
+
     setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    run_echo_test(iterations=2, msg_size=100_000)
+    run_echo_test(iterations=50000, msg_size=10)
 
 
 
