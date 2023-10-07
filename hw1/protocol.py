@@ -114,11 +114,11 @@ class MyTCPProtocol(UDPBasedProtocol):
         while True:
             try:
                 resp = self.recvfrom(self.max_size)
-                # print('send resp', resp)
+                print('send resp', resp)
                 if resp.startswith(b'END'):
                     if b.id == resp.removeprefix(b'END'):
                         return len(data)
-                if resp == b'PENDING':
+                if resp.startswith(b'PENDING'):
                     self.sendto(b[0])
                     # print('send pending here')
                 if resp.startswith(b'GET'):
@@ -126,7 +126,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                     self.sendto(b[lost_part])
                     # print(f'send {lost_part} {b[lost_part]}')
             except TimeoutError:
-                # print('send pending')
+                print('send pending')
                 self.sendto(b'PENDING')
 
         return len(data)
@@ -140,7 +140,7 @@ class MyTCPProtocol(UDPBasedProtocol):
 
         try:
             data_part = self.recvfrom(self.max_size)
-            if not data_part.startswith(b'END') and data_part != b'PENDING' and not data_part.startswith(b'GET'):
+            if not data_part.startswith(b'END') and not data_part.startswith(b'PENDING') and not data_part.startswith(b'GET'):
                 d.add_part(data_part)
                 if d.is_done():
                     abort(d.id)
@@ -157,7 +157,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                     pass
                 elif data_part.startswith(b'GET'):
                     pass
-                elif data_part == b'PENDING':
+                elif data_part.startswith(b'PENDING'):
                     # print('recv pending')
                     lost_status = d.get_one_lost()
                     if lost_status == 'init':
