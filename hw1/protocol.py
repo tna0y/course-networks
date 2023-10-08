@@ -69,7 +69,7 @@ class DeBufferizer(BufferSettings):
             self.total_parts = int(total_parts)
         else:
             assert self.total_parts == int(total_parts)
-        return int(sequence_number)
+        return data_id
 
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
@@ -89,12 +89,19 @@ class DeBufferizer(BufferSettings):
             data.extend(self.data_arr[i])
         return bytes(data)
 
+    def check_part_id(self, unknown_part):
+        sequence_number, _, tail = unknown_part.partition(self.magic_sep)
+        total_parts, _, tail = tail.partition(self.magic_sep)
+        data_id, _, part_data = tail.partition(self.magic_sep)
+        return data_id
+
 
 class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_size = 2 ** 32
         self.udp_socket.settimeout(0.00001)
+        self.seen_ids = set()
 
     def send(self, data: bytes):
         b = Bufferizer(data)
@@ -128,13 +135,16 @@ class MyTCPProtocol(UDPBasedProtocol):
                 self.sendto(b'END' + id)
 
         d = DeBufferizer()
-
+        
+        
         try:
             data_part = self.recvfrom(self.max_size)
+            id = d.check_part_id(data_part)
             if not data_part.startswith(b'END') and data_part != b'PENDING' and not data_part.startswith(b'GET'):
                 d.add_part(data_part)
                 if d.is_done():
                     abort(d.id)
+                    self.seen_ids.add(id)
                     return d.get_data()
         except TimeoutError:
             d = DeBufferizer()
@@ -142,6 +152,10 @@ class MyTCPProtocol(UDPBasedProtocol):
         while not d.is_done():
             try:
                 data_part = self.recvfrom(self.max_size)
+                id = d.check_part_id(data_part)
+                if id in self.seen_ids:
+                    print('raise')
+                    raise TimeoutError('Already seen')
                 if data_part.startswith(b'END'):
                     pass
                 elif data_part.startswith(b'GET'):
@@ -151,16 +165,21 @@ class MyTCPProtocol(UDPBasedProtocol):
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
+                        self.seen_ids.add(id)
                         abort(d.id)
                         return d.get_data()
                     else:
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
                 else:
-                    add_number = d.add_part(data_part)
+                    data_id = d.add_part(data_part)
+                    if d.id is not None and d.id != data_id:
+                        abort(data_id)
+                        continue
                     lost_status = d.get_one_lost()
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
+                        self.seen_ids.add(id)
                         abort(d.id)
                         return d.get_data()
                     else:
@@ -168,6 +187,7 @@ class MyTCPProtocol(UDPBasedProtocol):
             except TimeoutError:
                 self.sendto(b'PENDING')
         abort(d.id)
+        self.seen_ids.add(d.id)
         return d.get_data()
         
         
@@ -182,6 +202,10 @@ if __name__ == "__main__":
     setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     run_echo_test(iterations=50000, msg_size=10)
 
+    # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
+    # run_echo_test(iterations=2, msg_size=100)
+    # setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
+    # run_echo_test(iterations=1000, msg_size=11)
 
 
     # msg = os.urandom(10000)
