@@ -28,7 +28,7 @@ class Bufferizer(BufferSettings):
     def __init__(self, data: bytes) -> None:
         super().__init__()
         self.data = data
-        self.id = os.urandom(24)
+        self.id = os.urandom(32)
         if len(data) % self.window_size != 0:
             self.total_parts = len(data) // self.window_size + 1
         else:
@@ -58,29 +58,38 @@ class DeBufferizer(BufferSettings):
         self.total_parts = None
         self.id = None
 
-    def add_part(self, unknown_part):
+    def add_part(self, unknown_part, seen_ids):
         sequence_number, _, tail = unknown_part.partition(self.magic_sep)
         total_parts, _, tail = tail.partition(self.magic_sep)
         data_id, _, part_data = tail.partition(self.magic_sep)
 
-        self.data_arr[int(sequence_number)] = part_data
+        if data_id in seen_ids:
+            # print('Already seen', part_data)
+            raise TimeoutError
+        
         self.id = data_id
+        self.data_arr[int(sequence_number)] = part_data
         if self.total_parts is None:
             self.total_parts = int(total_parts)
         else:
             assert self.total_parts == int(total_parts)
         return data_id
 
-    def is_done(self) -> bool:
-        return len(self.data_arr) == self.total_parts
+    def is_done(self, seen_ids) -> bool:
+        done = len(self.data_arr) == self.total_parts
+        if done:
+            seen_ids.add(self.id)
+            return True
+        return False
 
-    def get_one_lost(self):
+    def get_one_lost(self, seen_ids):
         if self.total_parts is None:
             return 'init'
         losts = list(set(range(self.total_parts)) - set(self.data_arr.keys()))
         if len(losts) > 0:
             return losts[0]
         elif len(losts) == 0:
+            seen_ids.add(self.id)
             return 'done'
 
     def get_data(self):
@@ -88,12 +97,6 @@ class DeBufferizer(BufferSettings):
         for i in range(self.total_parts):
             data.extend(self.data_arr[i])
         return bytes(data)
-
-    def check_part_id(self, unknown_part):
-        sequence_number, _, tail = unknown_part.partition(self.magic_sep)
-        total_parts, _, tail = tail.partition(self.magic_sep)
-        data_id, _, part_data = tail.partition(self.magic_sep)
-        return data_id
 
 
 class MyTCPProtocol(UDPBasedProtocol):
@@ -136,50 +139,41 @@ class MyTCPProtocol(UDPBasedProtocol):
 
         d = DeBufferizer()
         
-        
         try:
             data_part = self.recvfrom(self.max_size)
-            id = d.check_part_id(data_part)
             if not data_part.startswith(b'END') and data_part != b'PENDING' and not data_part.startswith(b'GET'):
-                d.add_part(data_part)
-                if d.is_done():
+                d.add_part(data_part, self.seen_ids)
+                if d.is_done(self.seen_ids):
                     abort(d.id)
-                    self.seen_ids.add(id)
                     return d.get_data()
         except TimeoutError:
             d = DeBufferizer()
 
-        while not d.is_done():
+        while not d.is_done(self.seen_ids):
             try:
                 data_part = self.recvfrom(self.max_size)
-                id = d.check_part_id(data_part)
-                if id in self.seen_ids:
-                    print('raise')
-                    raise TimeoutError('Already seen')
                 if data_part.startswith(b'END'):
                     pass
                 elif data_part.startswith(b'GET'):
                     pass
                 elif data_part == b'PENDING':
-                    lost_status = d.get_one_lost()
+                    lost_status = d.get_one_lost(self.seen_ids)
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
-                        self.seen_ids.add(id)
                         abort(d.id)
                         return d.get_data()
                     else:
                         self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
                 else:
-                    data_id = d.add_part(data_part)
+                    data_id = d.add_part(data_part, self.seen_ids)
                     if d.id is not None and d.id != data_id:
                         abort(data_id)
                         continue
-                    lost_status = d.get_one_lost()
+                    lost_status = d.get_one_lost(self.seen_ids)
                     if lost_status == 'init':
                         self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
                     elif lost_status == 'done':
-                        self.seen_ids.add(id)
                         abort(d.id)
                         return d.get_data()
                     else:
@@ -198,28 +192,16 @@ if __name__ == "__main__":
     # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     # run_echo_test(iterations=2, msg_size=100_000)
 
-
+    import time
+    t = time.time()
     setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    run_echo_test(iterations=50000, msg_size=10)
+    run_echo_test(iterations=1000, msg_size=10)
+    print(time.time() - t)
 
     # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     # run_echo_test(iterations=2, msg_size=100)
     # setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
     # run_echo_test(iterations=1000, msg_size=11)
-
-
-    # msg = os.urandom(10000)
-    # b = Bufferizer(msg)
-    # print(b.total_parts)
-    # d = DeBufferizer()
-    # print(d.get_one_lost())
-    # print(b[0])
-    # d.add_part(b[0])
-    # lost = d.get_one_lost()
-    # print(lost, b[lost])
-    # d.add_part(b[lost])
-    # lost = d.get_one_lost()
-    # print(lost, b[lost])
 
 
 # Сброс кривых параметров (из-за которых в том числе может отваливаться VSCode remote)
