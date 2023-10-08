@@ -3,6 +3,7 @@ import json
 import base64
 import os
 import random
+import time
 
 
 class UDPBasedProtocol:
@@ -19,30 +20,29 @@ class UDPBasedProtocol:
         return msg
 
 
-class BufferSettings:
-    window_size = 2**15
-    magic_sep = b'SEP'
+WINDOW_SIZE = 2**15
+SEP = b'SEP'
 
 
-class Bufferizer(BufferSettings):
+class Bufferizer:
     def __init__(self, data: bytes) -> None:
-        super().__init__()
         self.data = data
         self.id = os.urandom(32)
-        if len(data) % self.window_size != 0:
-            self.total_parts = len(data) // self.window_size + 1
+        if len(data) % WINDOW_SIZE != 0:
+            self.total_parts = len(data) // WINDOW_SIZE + 1
         else:
-            self.total_parts = len(data) // self.window_size
+            self.total_parts = len(data) // WINDOW_SIZE
 
     def __getitem__(self, i):
         part = bytearray()
-        part.extend(bytes(str(i), encoding="UTF-8"))
-        part.extend(self.magic_sep)
-        part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
-        part.extend(self.magic_sep)
+        part.extend(b'DATA')
+        part.extend(SEP)
         part.extend(self.id)
-        part.extend(self.magic_sep)
-        part.extend(self.data[i*self.window_size:(i+1)*self.window_size])
+        part.extend(bytes(str(i), encoding="UTF-8"))
+        part.extend(SEP)
+        part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
+        part.extend(SEP)
+        part.extend(self.data[i*WINDOW_SIZE:(i+1)*WINDOW_SIZE])
         return part
 
     def __iter__(self):
@@ -51,46 +51,45 @@ class Bufferizer(BufferSettings):
 
 
 
-class DeBufferizer(BufferSettings):
+class DeBufferizer:
     def __init__(self) -> None:
-        super().__init__()
         self.data_arr = {}
         self.total_parts = None
         self.id = None
 
-    def add_part(self, unknown_part, seen_ids):
-        sequence_number, _, tail = unknown_part.partition(self.magic_sep)
-        total_parts, _, tail = tail.partition(self.magic_sep)
-        data_id, _, part_data = tail.partition(self.magic_sep)
+    def add_part(self, unknown_part):
+        _, id, part_n, total_parts, data = unknown_part.split(SEP)
 
-        if data_id in seen_ids:
-            # print('Already seen', part_data)
-            raise TimeoutError
-        
-        self.id = data_id
-        self.data_arr[int(sequence_number)] = part_data
+        if self.id is None:
+            self.id = id
+        else:
+            assert self.id == id
         if self.total_parts is None:
             self.total_parts = int(total_parts)
         else:
             assert self.total_parts == int(total_parts)
-        return data_id
 
-    def is_done(self, seen_ids) -> bool:
-        done = len(self.data_arr) == self.total_parts
-        if done:
+        self.data_arr[int(part_n)] = data
+        return
+
+    def is_done(self) -> bool:
+        return len(self.data_arr) == self.total_parts
+
+    def get_losts_request(self):
+        if self.total_parts is None:
+            raise ValueError('Get losts of not initialized DeBufferizer')
+        losts = list(set(range(self.total_parts)) - set(self.data_arr.keys()))
+        if len(losts) > 0:
+            return f'{sss}'.join(losts)
+        else:
             seen_ids.add(self.id)
-            return True
-        return False
-
-    def get_one_lost(self, seen_ids):
+            return 'done'
+        
+    def get_lost_len(self):
         if self.total_parts is None:
             return 'init'
         losts = list(set(range(self.total_parts)) - set(self.data_arr.keys()))
-        if len(losts) > 0:
-            return losts[0]
-        elif len(losts) == 0:
-            seen_ids.add(self.id)
-            return 'done'
+        return len(losts)
 
     def get_data(self):
         data = bytearray()
@@ -103,85 +102,46 @@ class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_size = 2 ** 32
-        self.udp_socket.settimeout(0.00001)
-        self.seen_ids = set()
+        self.udp_socket.settimeout(0.001)
+        self.send_buffer = {}
+        self.recv_buffer = {}
 
     def send(self, data: bytes):
-        b = Bufferizer(data)
 
-        if b.total_parts == 1:
-            for part in b:
-                self.sendto(part)
-
-
-        while True:
+        while len(self.send_buffer):
             try:
-                resp = self.recvfrom(self.max_size)
-                if resp.startswith(b'END'):
-                    if b.id == resp.removeprefix(b'END'):
-                        return len(data)
-                elif resp == b'PENDING':
-                    self.sendto(b[0])
-                elif resp.startswith(b'GET'):
-                    lost_part = int(resp.removeprefix(b'GET'))
-                    self.sendto(b[lost_part])
-                else:
-                    pass
+                id = self.send_buffer.keys()[0]
+                self.sendto(b'APPROVE' + id)
+                data = self.recvfrom(self.max_size)
+                if data == b'OK' + id:
+                    self.send_buffer.pop(id)
+                elif data.startswith('GET'):
+                    print('GET')
             except TimeoutError:
-                self.sendto(b'PENDING')
+                pass
+
+
+        b = Bufferizer(data)
+        self.send_buffer[b.id] = b
+        for part in b:
+            self.sendto(part)
 
         return len(data)
 
     def recv(self, n: int):
-        def abort(id):
-            for _ in range(15):
-                self.sendto(b'END' + id)
-
         d = DeBufferizer()
-        
-        try:
-            data_part = self.recvfrom(self.max_size)
-            if not data_part.startswith(b'END') and data_part != b'PENDING' and not data_part.startswith(b'GET'):
-                d.add_part(data_part, self.seen_ids)
-                if d.is_done(self.seen_ids):
-                    abort(d.id)
-                    return d.get_data()
-        except TimeoutError:
-            d = DeBufferizer()
-
         while not d.is_done(self.seen_ids):
             try:
-                data_part = self.recvfrom(self.max_size)
-                if data_part.startswith(b'END'):
+                data = self.recvfrom(self.max_size)
+                if data.startswith(b'APPROVE'):
                     pass
-                elif data_part.startswith(b'GET'):
+                elif data.startswith(b'GET'):
                     pass
-                elif data_part == b'PENDING':
-                    lost_status = d.get_one_lost(self.seen_ids)
-                    if lost_status == 'init':
-                        self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
-                    elif lost_status == 'done':
-                        abort(d.id)
-                        return d.get_data()
-                    else:
-                        self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
-                else:
-                    data_id = d.add_part(data_part, self.seen_ids)
-                    if d.id is not None and d.id != data_id:
-                        abort(data_id)
-                        continue
-                    lost_status = d.get_one_lost(self.seen_ids)
-                    if lost_status == 'init':
-                        self.sendto(b'GET' + bytes(str(0), encoding="UTF-8"))
-                    elif lost_status == 'done':
-                        abort(d.id)
-                        return d.get_data()
-                    else:
-                        self.sendto(b'GET' + bytes(str(lost_status), encoding="UTF-8"))
+                elif data.startswith(b'DATA'):
+                    d.add_part(data_part, self.seen_ids)
             except TimeoutError:
-                self.sendto(b'PENDING')
-        abort(d.id)
-        self.seen_ids.add(d.id)
+                pass
+        
         return d.get_data()
         
         
@@ -189,14 +149,14 @@ class MyTCPProtocol(UDPBasedProtocol):
 
 if __name__ == "__main__":
     from protocol_test import setup_netem, run_echo_test
-    # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    # run_echo_test(iterations=2, msg_size=100_000)
+    setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.01)
+    run_echo_test(iterations=2, msg_size=10_000_000)
 
-    import time
-    t = time.time()
-    setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    run_echo_test(iterations=1000, msg_size=10)
-    print(time.time() - t)
+    # import time
+    # t = time.time()
+    # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
+    # run_echo_test(iterations=1000, msg_size=10)
+    # print(time.time() - t)
 
     # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     # run_echo_test(iterations=2, msg_size=100)
