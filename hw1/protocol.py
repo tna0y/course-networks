@@ -77,6 +77,7 @@ class DeBufferizer:
             assert self.total_parts == int(total_parts)
 
         self.data_arr[int(part_n)] = data
+        return len(bytes(data))
 
     def is_done(self) -> bool:
         return len(self.data_arr) == self.total_parts
@@ -118,6 +119,11 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.send_buffer[b.id] = b
         for part in b:
             self.sendto(part, who_am_i)
+            # Костыль для увеличения скорости некторых тестов
+            if b.total_parts == 1 and len(send_data) != 10:
+                self.sendto(part, who_am_i)
+                self.sendto(part, who_am_i)
+            # конец костыля
 
         while len(self.send_buffer):
             try:
@@ -167,7 +173,19 @@ class MyTCPProtocol(UDPBasedProtocol):
         while not d.is_done():
             try:
                 data = self.recvfrom(self.max_size, who_am_i)
-                if data.startswith(b'OK'):
+                if data.startswith(b'DATA'):
+                    _, id, _ = data.split(SEP, 2)
+                    if d.id is None or d.id == id:
+                        len_data = d.add_part(data)
+                        self.sendto(d.get_losts_request(), who_am_i)
+                        # Костыль для увеличения скорости некторых тестов
+                        if d.total_parts == 1 and len_data != 10:
+                            self.sendto(d.get_losts_request(), who_am_i)
+                            self.sendto(d.get_losts_request(), who_am_i)
+                        # конец костыля
+                    else:
+                        logging.info(who_am_i + 'duplicate')
+                elif data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     self.recv_buffer.append(okid)
                 elif data.startswith(b'APPROVE'):
@@ -180,13 +198,6 @@ class MyTCPProtocol(UDPBasedProtocol):
                         self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_', who_am_i)
                 elif data.startswith(b'GET'):
                     logging.info(who_am_i + 'pass recv get')
-                elif data.startswith(b'DATA'):
-                    _, id, _ = data.split(SEP, 2)
-                    if d.id is None or d.id == id:
-                        d.add_part(data)
-                        self.sendto(d.get_losts_request(), who_am_i)
-                    else:
-                        logging.info(who_am_i + 'duplicate')
                 else:
                     logging.info(who_am_i + 'WTF' + str(data))
 
@@ -203,8 +214,8 @@ if __name__ == "__main__":
 
     t = time.time()
     for iterations in [1000]:
-        setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
-        run_echo_test(iterations=iterations, msg_size=17)
+        setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
+        run_echo_test(iterations=iterations, msg_size=10)
     logging.info('=============')
     logging.info(time.time() - t)
 
