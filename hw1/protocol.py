@@ -1,8 +1,5 @@
 import socket
-import json
-import base64
 import os
-import random
 import time
 from collections import OrderedDict
 import logging
@@ -104,81 +101,69 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.send_buffer = OrderedDict()
         self.recv_buffer = []
 
-    def sendto(self, mytype:str, data:bytes):
-        logging.info(str(mytype) + ' SEND', bytes(data))
-        super().sendto(data)
-
-    def recvfrom(self, mytype, n):
-        data = super().recvfrom(n)
-        logging.info(str(mytype)+ ' GETS', bytes(data))
-        return data
-
-    def send(self, mytype:str, send_data: bytes):
-        mytype += ' send'
-
+    def send(self, send_data: bytes):
         b = Bufferizer(send_data)
         self.send_buffer[b.id] = b
         for part in b:
-            self.sendto(mytype, part)
+            self.sendto( part)
 
         while len(self.send_buffer):
             try:
-                data = self.recvfrom(mytype,self.max_size)
+                data = self.recvfrom(self.max_size)
                 
                 if data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     if okid in self.send_buffer.keys():
                         del_item = self.send_buffer.pop(okid)
-                        logging.info(mytype, 'DEL ID', del_item.id)
+                        logging.info('DEL ID', del_item.id)
                     else:
-                        logging.info(mytype, 'Duplicate ok')
+                        logging.info('Duplicate ok')
                 elif data.startswith(b'GET'):
                     logging.info('sssss')
                     try:
                         _, id, lost_part = data.split(SEP)
                         if id == b'NEW':
                             for part in b:
-                                self.sendto(mytype, part)
-                            self.sendto(mytype, b'APPROVE' + b.id)
+                                self.sendto( part)
+                            self.sendto( b'APPROVE' + b.id)
                         else:
-                            self.sendto(mytype, self.send_buffer[id][int(lost_part)])
+                            self.sendto( self.send_buffer[id][int(lost_part)])
                     except KeyError:
                         logging.info('Key')
                         pass
                 elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto(mytype, b'OK' + id)
-                        logging.info(mytype, 'break loop')
+                        self.sendto( b'OK' + id)
+                        logging.info('break loop')
                     else:
-                        logging.info(mytype, 'not in buffer', id)
+                        logging.info('not in buffer', id)
                 elif data.startswith(b'DATA'):
-                    self.sendto(mytype, b'APPROVE' + list(self.send_buffer.keys())[0])
+                    self.sendto( b'APPROVE' + list(self.send_buffer.keys())[0])
                 else:
-                    logging.info(mytype, 'WTF2', data)
+                    logging.info('WTF2', data)
             except TimeoutError:
                 for part in b:
-                    self.sendto(mytype, part)
-                self.sendto(mytype, b'APPROVE' + b.id)
-                logging.info(mytype, 'ToE')
+                    self.sendto( part)
+                self.sendto( b'APPROVE' + b.id)
+                logging.info('ToE')
 
-        logging.info(mytype, 'Closed')
+        logging.info('Closed')
         return len(send_data)
 
-    def recv(self, mytype:str, n: int):
-        mytype += ' recv'
+    def recv(self, n: int):
         d = DeBufferizer()
         while not d.is_done():
             try:
-                data = self.recvfrom(mytype,self.max_size)
+                data = self.recvfrom(self.max_size)
                 if data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto(mytype, b'OK' + id)
+                        self.sendto( b'OK' + id)
                     elif id == d.id:
-                        self.sendto(mytype,  d.get_losts_request())
+                        self.sendto(  d.get_losts_request())
                     else:
-                        self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
+                        self.sendto( b'GET' + SEP + b'NEW' + SEP + b'_')
                 elif data.startswith(b'GET'):
                     logging.info('here')
                 elif data.startswith(b'OK'):
@@ -188,47 +173,37 @@ class MyTCPProtocol(UDPBasedProtocol):
                     _, id, _ = data.split(SEP, 2)
                     if d.id is None or d.id == id:
                         d.add_part(data)
-                        self.sendto(mytype, d.get_losts_request())
+                        self.sendto( d.get_losts_request())
                     else:
-                        logging.info(mytype, 'duplicate')
+                        logging.info('duplicate')
                 else:
-                    logging.info(mytype, 'WTF', data)
+                    logging.info('WTF', data)
 
             except TimeoutError:
-                logging.info(mytype, 'ToE')
+                logging.info('ToE')
         
 
         self.recv_buffer.append(d.id)
-        logging.info(mytype, 'Closed')
+        logging.info('Closed')
         return d.get_data()
         
         
 
 
 if __name__ == "__main__":
-    from protocol_test import setup_netem, run_echo_test
-    # setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.01)
-    # run_echo_test(iterations=2, msg_size=10_000_000)
+    from protocol_test import *
 
-    # setup_netem(packet_loss=0.01, duplicate=0.0, reorder=0.0)
-    # run_echo_test(iterations=100, msg_size=14)
 
-    # setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
-    # run_echo_test(iterations=1000, msg_size=14)
-    import time
     t = time.time()
-    setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
-    run_echo_test(iterations=1000, msg_size=14)
+    for iterations in [10, 100, 1000]:
+        setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
+        run_echo_test(iterations=iterations, msg_size=14)
     print(time.time() - t)
 
-
+    # t = time.time()
     # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    # run_echo_test(iterations=1000, msg_size=10)
-
-    # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    # run_echo_test(iterations=2, msg_size=100)
-    # setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
-    # run_echo_test(iterations=1000, msg_size=11)
+    # run_echo_test(iterations=50_000, msg_size=10)
+    # print(time.time() - t)
 
 
 # Сброс кривых параметров (из-за которых в том числе может отваливаться VSCode remote)
