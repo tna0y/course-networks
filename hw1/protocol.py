@@ -8,7 +8,7 @@ import logging
 
 logging.basicConfig(format='%(message)s',
                     level=logging.INFO,
-                    handlers=[logging.FileHandler("main_double.logs"),
+                    handlers=[logging.FileHandler("main_2.logs"),
                               logging.StreamHandler()])
 
 
@@ -118,13 +118,6 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.send_buffer[b.id] = b
         for part in b:
             self.sendto(part, who_am_i)
-        #     self.sendto(part, who_am_i)
-
-        # data = self.recvfrom(self.max_size, who_am_i)
-        # if data.startswith(b'OK'):
-        #     okid = data.removeprefix(b'OK')
-        #     if okid in self.send_buffer.keys():
-        #         del_item = self.send_buffer.pop(okid)
 
         while len(self.send_buffer):
             try:
@@ -170,10 +163,14 @@ class MyTCPProtocol(UDPBasedProtocol):
     def recv(self, n: int, who_am_i: str = 'unknown'):
         who_am_i += 'recv '
         d = DeBufferizer()
+
         while not d.is_done():
             try:
                 data = self.recvfrom(self.max_size, who_am_i)
-                if data.startswith(b'APPROVE'):
+                if data.startswith(b'OK'):
+                    okid = data.removeprefix(b'OK')
+                    self.recv_buffer.append(okid)
+                elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
                         self.sendto(b'OK' + id, who_am_i)
@@ -183,9 +180,6 @@ class MyTCPProtocol(UDPBasedProtocol):
                         self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_', who_am_i)
                 elif data.startswith(b'GET'):
                     logging.info(who_am_i + 'pass recv get')
-                elif data.startswith(b'OK'):
-                    okid = data.removeprefix(b'OK')
-                    self.recv_buffer.append(okid)
                 elif data.startswith(b'DATA'):
                     _, id, _ = data.split(SEP, 2)
                     if d.id is None or d.id == id:
