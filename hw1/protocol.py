@@ -4,6 +4,7 @@ import base64
 import os
 import random
 import time
+from collections import OrderedDict
 
 
 class UDPBasedProtocol:
@@ -27,7 +28,7 @@ SEP = b'SEP'
 class Bufferizer:
     def __init__(self, data: bytes) -> None:
         self.data = data
-        self.id = os.urandom(32)
+        self.id = os.urandom(10)
         if len(data) % WINDOW_SIZE != 0:
             self.total_parts = len(data) // WINDOW_SIZE + 1
         else:
@@ -96,32 +97,43 @@ class MyTCPProtocol(UDPBasedProtocol):
         super().__init__(*args, **kwargs)
         self.max_size = 2 ** 32
         self.udp_socket.settimeout(0.1)
-        self.send_buffer = {}
+        self.send_buffer = OrderedDict()
         self.recv_buffer = []
 
     def sendto(self, mytype:str, data:bytes):
-        print(str(mytype), bytes(data))
+        print(str(mytype) + ' SEND', bytes(data))
         super().sendto(data)
 
+    def recvfrom(self, mytype, n):
+        data = super().recvfrom(n)
+        print(str(mytype)+ ' GETS', bytes(data))
+        return data
+
     def send(self, mytype:str, send_data: bytes):
-        mytype += ' SEND'
+        mytype += ' send'
 
         b = Bufferizer(send_data)
         self.send_buffer[b.id] = b
         for part in b:
             self.sendto(mytype, part)
 
-
+        to_i = 0
         while len(self.send_buffer):
             try:
                 id = list(self.send_buffer.keys())[0]
-                self.sendto(mytype, b'APPROVE' + id)
-                # print(mytype, b'APPROVE' + id)
-                data = self.recvfrom(self.max_size)
+                if id not in self.recv_buffer:
+                    self.sendto(mytype, b'APPROVE' + id)
+                data = self.recvfrom(mytype,self.max_size)
                 
-                if data == b'OK' + id:
-                    self.send_buffer.pop(id)
+                if data.startswith(b'OK'):
+                    okid = data.removeprefix(b'OK')
+                    if okid in self.send_buffer.keys():
+                        del_id = self.send_buffer.pop(okid)
+                        print(mytype, 'DEL ID', del_id)
+                    else:
+                        print(mytype, 'Duplicate ok')
                 elif data.startswith(b'GET'):
+                    print('sssss')
                     try:
                         _, id, lost_parts = data.split(SEP)
                         if id == b'NEW':
@@ -131,50 +143,62 @@ class MyTCPProtocol(UDPBasedProtocol):
                             for part_n in lost_parts:
                                 self.sendto(mytype, self.send_buffer[id][part_n])
                     except KeyError:
+                        print('Key')
                         pass
                 elif data.startswith(b'APPROVE'):
-                    return len(send_data)
+                    id = data.removeprefix(b'APPROVE')
+                    # if id in self.recv_buffer:
+                    self.sendto(mytype, b'OK' + id)
+                        # print(mytype, 'break loop')
+                    # else:
+                        # print(mytype, 'not in buffer', id)
                 elif data.startswith(b'DATA'):
-                    return len(send_data)
+                    pass
                 else:
-                    print(mytype, 'WTF2')
+                    print(mytype, 'WTF2', data)
             except TimeoutError:
-                print(mytype, 'TO')
+                to_i += 1
+                if to_i > 10:
+                    break
+                print(mytype, 'ToE',)
 
         return len(send_data)
 
     def recv(self, mytype:str, n: int):
-        mytype += ' RECV'
+        mytype += ' recv'
         d = DeBufferizer()
         while not d.is_done():
             try:
-                data = self.recvfrom(self.max_size)
+                data = self.recvfrom(mytype,self.max_size)
                 # print(mytype, data)
                 if data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
                         self.sendto(mytype, b'OK' + id)
                     elif id == d.id:
-                        self.sendto(mytype, d.get_losts_request())
+                        self.sendto(mytype,  d.get_losts_request())
                     else:
                         self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
                 elif data.startswith(b'GET'):
                     pass
                 elif data.startswith(b'OK'):
-                    print(mytype, 'kekekek')
+                    pass
                 elif data.startswith(b'DATA'):
                     _, id, _ = data.split(SEP, 2)
                     if d.id is None or d.id == id:
                         d.add_part(data)
+                        self.sendto(mytype, d.get_losts_request())
+                        # print('add data', d.is_done(), d.id, d.get_losts_request())
                     else:
                         print(mytype, 'duplicate')
                 else:
-                    print(mytype, 'WTF')
+                    print(mytype, 'WTF', data)
 
             except TimeoutError:
-                print(mytype, 'GET NEW')
-                self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
+                print('ToE')
+                # self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
         
+        print('done')
         self.recv_buffer.append(d.id)
         return d.get_data()
         
@@ -186,7 +210,7 @@ if __name__ == "__main__":
     # setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.01)
     # run_echo_test(iterations=2, msg_size=10_000_000)
 
-    setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
+    setup_netem(packet_loss=0.01, duplicate=0.0, reorder=0.0)
     run_echo_test(iterations=100, msg_size=14)
 
     # import time
