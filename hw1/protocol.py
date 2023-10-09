@@ -120,9 +120,6 @@ class MyTCPProtocol(UDPBasedProtocol):
         to_i = 0
         while len(self.send_buffer):
             try:
-                id = list(self.send_buffer.keys())[0]
-                if id not in self.recv_buffer:
-                    self.sendto(mytype, b'APPROVE' + id)
                 data = self.recvfrom(mytype,self.max_size)
                 
                 if data.startswith(b'OK'):
@@ -139,6 +136,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                         if id == b'NEW':
                             for part in b:
                                 self.sendto(mytype, part)
+                            self.sendto(mytype, b'APPROVE' + b.id)
                         else:
                             for part_n in lost_parts:
                                 self.sendto(mytype, self.send_buffer[id][part_n])
@@ -180,9 +178,10 @@ class MyTCPProtocol(UDPBasedProtocol):
                     else:
                         self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
                 elif data.startswith(b'GET'):
-                    pass
+                    print('here')
                 elif data.startswith(b'OK'):
-                    pass
+                    okid = data.removeprefix(b'OK')
+                    self.recv_buffer.append(okid)
                 elif data.startswith(b'DATA'):
                     _, id, _ = data.split(SEP, 2)
                     if d.id is None or d.id == id:
