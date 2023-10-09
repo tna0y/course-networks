@@ -2,10 +2,8 @@ import socket
 import os
 import time
 from collections import OrderedDict
-import functools
 
 import logging
-
 logging.basicConfig(format='%(message)s',
                     level=logging.INFO,
                     handlers=[logging.FileHandler("main_2.logs"),
@@ -26,7 +24,7 @@ class UDPBasedProtocol:
         return msg
 
 
-WINDOW_SIZE = 2 ** 15
+WINDOW_SIZE = 2 ** 16-256
 SEP = b'SEP'
 
 
@@ -104,108 +102,80 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.send_buffer = OrderedDict()
         self.recv_buffer = []
 
-    def sendto(self, send_data: bytes, who_am_i: str = 'unknown'):
-        logging.info(who_am_i + ' SEND ' + str(bytes(send_data)))
-        super().sendto(send_data)
-
-    def recvfrom(self, send_data: bytes, who_am_i: str = 'unknown'):
-        data = super().recvfrom(send_data)
-        logging.info(who_am_i + ' GETS ' + str(bytes(data)))
-        return data
-
-    def send(self, send_data: bytes, who_am_i: str = 'unknown'):
-        who_am_i += 'send '
+    def send(self, send_data: bytes):
         b = Bufferizer(send_data)
         self.send_buffer[b.id] = b
         for part in b:
-            self.sendto(part, who_am_i)
+            self.sendto(part)
             # Костыль для увеличения скорости некторых тестов
             if b.total_parts == 1 and len(send_data) != 10:
-                self.sendto(part, who_am_i)
-                self.sendto(part, who_am_i)
+                self.sendto(part)
+                self.sendto(part)
             # конец костыля
 
         while len(self.send_buffer):
             try:
-                data = self.recvfrom(self.max_size, who_am_i)
+                data = self.recvfrom(self.max_size)
 
                 if data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     if okid in self.send_buffer.keys():
-                        del_item = self.send_buffer.pop(okid)
-                        logging.info(who_am_i + 'DEL ID' + str(del_item.id))
-                    else:
-                        logging.info(who_am_i + 'Duplicate ok')
+                        self.send_buffer.pop(okid)
                 elif data.startswith(b'GET'):
                     try:
                         _, id, lost_part = data.split(SEP)
                         if id == b'NEW':
                             for part in b:
-                                self.sendto(part, who_am_i)
-                            self.sendto(b'APPROVE' + b.id, who_am_i)
+                                self.sendto(part)
+                            self.sendto(b'APPROVE' + b.id)
                         else:
-                            self.sendto(self.send_buffer[id][int(lost_part)], who_am_i)
+                            self.sendto(self.send_buffer[id][int(lost_part)])
                     except KeyError:
-                        logging.info(who_am_i + 'Key')
+                        pass
                 elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto(b'OK' + id, who_am_i)
-                    else:
-                        logging.info(who_am_i + 'not in buffer' + str(id))
+                        self.sendto(b'OK' + id)
                 elif data.startswith(b'DATA'):
-                    self.sendto(b'APPROVE' + list(self.send_buffer.keys())[0], who_am_i)
-                else:
-                    logging.info(who_am_i + 'WTF2' + str(data))
+                    self.sendto(b'APPROVE' + list(self.send_buffer.keys())[0])
             except TimeoutError:
-                logging.info(who_am_i + 'ToE')
                 for part in b:
-                    self.sendto(part, who_am_i)
-                self.sendto(b'APPROVE' + b.id, who_am_i)
-
-        logging.info(who_am_i + 'Closed')
+                    self.sendto(part)
+                self.sendto(b'APPROVE' + b.id)
         return len(send_data)
 
-    def recv(self, n: int, who_am_i: str = 'unknown'):
-        who_am_i += 'recv '
+    def recv(self, n: int):
         d = DeBufferizer()
 
         while not d.is_done():
             try:
-                data = self.recvfrom(self.max_size, who_am_i)
+                data = self.recvfrom(self.max_size)
                 if data.startswith(b'DATA'):
                     _, id, _ = data.split(SEP, 2)
                     if d.id is None or d.id == id:
                         len_data = d.add_part(data)
-                        self.sendto(d.get_losts_request(), who_am_i)
+                        self.sendto(d.get_losts_request())
                         # Костыль для увеличения скорости некторых тестов
                         if d.total_parts == 1 and len_data != 10:
-                            self.sendto(d.get_losts_request(), who_am_i)
-                            self.sendto(d.get_losts_request(), who_am_i)
+                            self.sendto(d.get_losts_request())
+                            self.sendto(d.get_losts_request())
                         # конец костыля
-                    else:
-                        logging.info(who_am_i + 'duplicate')
                 elif data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     self.recv_buffer.append(okid)
                 elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto(b'OK' + id, who_am_i)
+                        self.sendto(b'OK' + id)
                     elif id == d.id:
-                        self.sendto(d.get_losts_request(), who_am_i)
+                        self.sendto(d.get_losts_request())
                     else:
-                        self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_', who_am_i)
-                elif data.startswith(b'GET'):
-                    logging.info(who_am_i + 'pass recv get')
-                else:
-                    logging.info(who_am_i + 'WTF' + str(data))
+                        self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_')
 
             except TimeoutError:
-                logging.info(who_am_i + 'ToE')
+                pass
 
         self.recv_buffer.append(d.id)
-        logging.info(who_am_i + 'Closed')
         return d.get_data()
 
 
