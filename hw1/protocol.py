@@ -4,6 +4,10 @@ import time
 from collections import OrderedDict
 import functools
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 
 class UDPBasedProtocol:
     def __init__(self, *, local_addr, remote_addr):
@@ -19,7 +23,7 @@ class UDPBasedProtocol:
         return msg
 
 
-WINDOW_SIZE = 2**15
+WINDOW_SIZE = 2 ** 15
 SEP = b'SEP'
 
 
@@ -42,13 +46,12 @@ class Bufferizer:
         part.extend(SEP)
         part.extend(bytes(str(self.total_parts), encoding="UTF-8"))
         part.extend(SEP)
-        part.extend(self.data[i*WINDOW_SIZE:(i+1)*WINDOW_SIZE])
+        part.extend(self.data[i * WINDOW_SIZE:(i + 1) * WINDOW_SIZE])
         return part
 
     def __iter__(self):
         for i in range(self.total_parts):
             yield self[i]
-
 
 
 class DeBufferizer:
@@ -80,7 +83,7 @@ class DeBufferizer:
         if len(losts) == 0:
             return b'OK' + self.id
         else:
-            return b'GET' + SEP + self.id + SEP + bytes(str(losts[0]), encoding="UTF-8") 
+            return b'GET' + SEP + self.id + SEP + bytes(str(losts[0]), encoding="UTF-8")
 
     def get_data(self):
         data = bytearray()
@@ -106,14 +109,18 @@ class MyTCPProtocol(UDPBasedProtocol):
         while len(self.send_buffer):
             try:
                 data = self.recvfrom(self.max_size)
-                
+
                 if data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     if okid in self.send_buffer.keys():
                         del_item = self.send_buffer.pop(okid)
+                        logging.info(who_am_i + 'DEL ID' + str(del_item.id))
+                    else:
+                        logging.info(who_am_i + 'Duplicate ok')
                 elif data.startswith(b'GET'):
-                    _, id, lost_part = data.split(SEP)
+                    logging.info(who_am_i + 'get')
                     try:
+                        _, id, lost_part = data.split(SEP)
                         if id == b'NEW':
                             for part in b:
                                 self.sendto(part)
@@ -121,18 +128,26 @@ class MyTCPProtocol(UDPBasedProtocol):
                         else:
                             self.sendto(self.send_buffer[id][int(lost_part)])
                     except KeyError:
+                        logging.info(who_am_i + 'Key')
                         pass
                 elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
                         self.sendto(b'OK' + id)
+                        logging.info(who_am_i + 'break loop')
+                    else:
+                        logging.info(who_am_i + 'not in buffer' + str(id))
                 elif data.startswith(b'DATA'):
                     self.sendto(b'APPROVE' + list(self.send_buffer.keys())[0])
+                else:
+                    logging.info(who_am_i + 'WTF2' + str(data))
             except TimeoutError:
                 for part in b:
                     self.sendto(part)
                 self.sendto(b'APPROVE' + b.id)
+                logging.info(who_am_i + 'ToE')
 
+        logging.info(who_am_i + 'Closed')
         return len(send_data)
 
     def recv(self, n: int, who_am_i: str = 'unknown'):
@@ -148,6 +163,8 @@ class MyTCPProtocol(UDPBasedProtocol):
                         self.sendto(d.get_losts_request())
                     else:
                         self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_')
+                elif data.startswith(b'GET'):
+                    logging.info(who_am_i + 'here')
                 elif data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     self.recv_buffer.append(okid)
@@ -156,14 +173,17 @@ class MyTCPProtocol(UDPBasedProtocol):
                     if d.id is None or d.id == id:
                         d.add_part(data)
                         self.sendto(d.get_losts_request())
+                    else:
+                        logging.info(who_am_i + 'duplicate')
+                else:
+                    logging.info(who_am_i + 'WTF' + str(data))
 
             except TimeoutError:
-                pass
+                logging.info(who_am_i + 'ToE')
 
         self.recv_buffer.append(d.id)
+        logging.info(who_am_i + 'Closed')
         return d.get_data()
-        
-        
 
 
 if __name__ == "__main__":
