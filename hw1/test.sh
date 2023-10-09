@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-set -xeuo pipefail
+set -xeu pipefail
 
-pytest -v protocol_test.py -o log_cli=true
+pytest -v protocol_test.py --durations=0 -o log_cli=true

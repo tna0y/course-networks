@@ -2,9 +2,7 @@ import socket
 import os
 import time
 from collections import OrderedDict
-import logging
-
-logging.basicConfig(level=logging.WARNING)
+import functools
 
 
 class UDPBasedProtocol:
@@ -78,8 +76,6 @@ class DeBufferizer:
         return len(self.data_arr) == self.total_parts
 
     def get_losts_request(self):
-        if self.total_parts is None:
-            raise ValueError('Get losts of not initialized DeBufferizer')
         losts = list(self.parts_set - set(self.data_arr.keys()))
         if len(losts) == 0:
             return b'OK' + self.id
@@ -115,13 +111,9 @@ class MyTCPProtocol(UDPBasedProtocol):
                     okid = data.removeprefix(b'OK')
                     if okid in self.send_buffer.keys():
                         del_item = self.send_buffer.pop(okid)
-                        logging.info('DEL ID', del_item.id)
-                    else:
-                        logging.info('Duplicate ok')
                 elif data.startswith(b'GET'):
-                    logging.info('sssss')
+                    _, id, lost_part = data.split(SEP)
                     try:
-                        _, id, lost_part = data.split(SEP)
                         if id == b'NEW':
                             for part in b:
                                 self.sendto( part)
@@ -129,26 +121,18 @@ class MyTCPProtocol(UDPBasedProtocol):
                         else:
                             self.sendto( self.send_buffer[id][int(lost_part)])
                     except KeyError:
-                        logging.info('Key')
                         pass
                 elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
                         self.sendto( b'OK' + id)
-                        logging.info('break loop')
-                    else:
-                        logging.info('not in buffer', id)
                 elif data.startswith(b'DATA'):
                     self.sendto( b'APPROVE' + list(self.send_buffer.keys())[0])
-                else:
-                    logging.info('WTF2', data)
             except TimeoutError:
                 for part in b:
                     self.sendto( part)
                 self.sendto( b'APPROVE' + b.id)
-                logging.info('ToE')
 
-        logging.info('Closed')
         return len(send_data)
 
     def recv(self, n: int):
@@ -164,8 +148,6 @@ class MyTCPProtocol(UDPBasedProtocol):
                         self.sendto(  d.get_losts_request())
                     else:
                         self.sendto( b'GET' + SEP + b'NEW' + SEP + b'_')
-                elif data.startswith(b'GET'):
-                    logging.info('here')
                 elif data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     self.recv_buffer.append(okid)
@@ -174,17 +156,11 @@ class MyTCPProtocol(UDPBasedProtocol):
                     if d.id is None or d.id == id:
                         d.add_part(data)
                         self.sendto( d.get_losts_request())
-                    else:
-                        logging.info('duplicate')
-                else:
-                    logging.info('WTF', data)
 
             except TimeoutError:
-                logging.info('ToE')
-        
+                pass
 
         self.recv_buffer.append(d.id)
-        logging.info('Closed')
         return d.get_data()
         
         
@@ -192,18 +168,61 @@ class MyTCPProtocol(UDPBasedProtocol):
 
 if __name__ == "__main__":
     from protocol_test import *
+    
+    def log_time(timeout):
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                print(func.__name__, end='... ')
+                t = time.time()
+                func(*args, **kwargs)
+                print(f'{round(time.time() - t, 2)}/{timeout} seconds.')
+            return wrapper
+        return decorator
 
+    @log_time(20)
+    def test_basic():
+        for iterations in [10, 100, 1000]:
+            setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
+            run_echo_test(iterations=iterations, msg_size=11)
+    @log_time(20)
+    def test_small_loss():
+        for iterations in [10, 100, 1000]:
+            setup_netem(packet_loss=0.02, duplicate=0.0, reorder=0.0)
+            run_echo_test(iterations=iterations, msg_size=14)
+    @log_time(20)
+    def test_small_duplicate():
+        for iterations in [10, 100, 1000, 5000]:
+            setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
+            run_echo_test(iterations=iterations, msg_size=14)
+    @log_time(20)
+    def test_high_loss():
+        for iterations in [10, 100, 1000]:
+            setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
+            run_echo_test(iterations=iterations, msg_size=17)
+    @log_time(20)
+    def test_high_duplicate():
+        for iterations in [10, 100, 1000]:
+            setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
+            run_echo_test(iterations=iterations, msg_size=14)
+    @log_time(180)
+    def test_large_message():
+        for msg_size in [100, 100_000, 10_000_000]:
+            setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
+            run_echo_test(iterations=2, msg_size=msg_size)
+    @log_time(60)
+    def test_perfomance():
+        for iterations in [50_000]:
+            setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
+            run_echo_test(iterations=iterations, msg_size=10)
 
-    t = time.time()
-    for iterations in [10, 100, 1000]:
-        setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
-        run_echo_test(iterations=iterations, msg_size=14)
-    print(time.time() - t)
-
-    # t = time.time()
-    # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    # run_echo_test(iterations=50_000, msg_size=10)
-    # print(time.time() - t)
+    test_basic()
+    test_small_loss()
+    test_small_duplicate()
+    test_high_loss()
+    test_high_duplicate()
+    test_large_message()
+    test_perfomance()
 
 
 # Сброс кривых параметров (из-за которых в том числе может отваливаться VSCode remote)
