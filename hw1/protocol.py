@@ -189,7 +189,6 @@ class MyTCPProtocol(UDPBasedProtocol):
                     if d.id is None or d.id == id:
                         d.add_part(data)
                         self.sendto(mytype, d.get_losts_request())
-                        # logging.info('add data', d.is_done(), d.id, d.get_losts_request())
                     else:
                         logging.info(mytype, 'duplicate')
                 else:
@@ -197,9 +196,8 @@ class MyTCPProtocol(UDPBasedProtocol):
 
             except TimeoutError:
                 logging.info(mytype, 'ToE')
-                # self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
         
-        # logging.info('done')
+
         self.recv_buffer.append(d.id)
         logging.info(mytype, 'Closed')
         return d.get_data()
@@ -217,14 +215,15 @@ if __name__ == "__main__":
 
     # setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
     # run_echo_test(iterations=1000, msg_size=14)
-    setup_netem(packet_loss=0.2, duplicate=0.0, reorder=0.0)
-    run_echo_test(iterations=500, msg_size=17)
+    import time
+    t = time.time()
+    setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
+    run_echo_test(iterations=1000, msg_size=14)
+    print(time.time() - t)
 
-    # import time
-    # t = time.time()
+
     # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     # run_echo_test(iterations=1000, msg_size=10)
-    # logging.info(time.time() - t)
 
     # setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     # run_echo_test(iterations=2, msg_size=100)
