@@ -6,7 +6,8 @@ import functools
 
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(format='%(message)s',
+                    level=logging.INFO)
 
 
 class UDPBasedProtocol:
@@ -100,15 +101,24 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.send_buffer = OrderedDict()
         self.recv_buffer = []
 
+    def sendto(self, send_data: bytes, who_am_i: str = 'unknown'):
+        logging.info(who_am_i + str(bytes(send_data)))
+        super().sendto(send_data)
+
+    def recvfrom(self, send_data: bytes, who_am_i: str = 'unknown'):
+        data = super().recvfrom(send_data)
+        logging.info(who_am_i + str(bytes(data)))
+        return data
+
     def send(self, send_data: bytes, who_am_i: str = 'unknown'):
         b = Bufferizer(send_data)
         self.send_buffer[b.id] = b
         for part in b:
-            self.sendto(part)
+            self.sendto(part, who_am_i)
 
         while len(self.send_buffer):
             try:
-                data = self.recvfrom(self.max_size)
+                data = self.recvfrom(self.max_size, who_am_i)
 
                 if data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
@@ -123,28 +133,28 @@ class MyTCPProtocol(UDPBasedProtocol):
                         _, id, lost_part = data.split(SEP)
                         if id == b'NEW':
                             for part in b:
-                                self.sendto(part)
-                            self.sendto(b'APPROVE' + b.id)
+                                self.sendto(part, who_am_i)
+                            self.sendto(b'APPROVE' + b.id, who_am_i)
                         else:
-                            self.sendto(self.send_buffer[id][int(lost_part)])
+                            self.sendto(self.send_buffer[id][int(lost_part)], who_am_i)
                     except KeyError:
                         logging.info(who_am_i + 'Key')
                         pass
                 elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto(b'OK' + id)
+                        self.sendto(b'OK' + id, who_am_i)
                         logging.info(who_am_i + 'break loop')
                     else:
                         logging.info(who_am_i + 'not in buffer' + str(id))
                 elif data.startswith(b'DATA'):
-                    self.sendto(b'APPROVE' + list(self.send_buffer.keys())[0])
+                    self.sendto(b'APPROVE' + list(self.send_buffer.keys())[0], who_am_i)
                 else:
                     logging.info(who_am_i + 'WTF2' + str(data))
             except TimeoutError:
                 for part in b:
-                    self.sendto(part)
-                self.sendto(b'APPROVE' + b.id)
+                    self.sendto(part, who_am_i)
+                self.sendto(b'APPROVE' + b.id, who_am_i)
                 logging.info(who_am_i + 'ToE')
 
         logging.info(who_am_i + 'Closed')
@@ -154,15 +164,15 @@ class MyTCPProtocol(UDPBasedProtocol):
         d = DeBufferizer()
         while not d.is_done():
             try:
-                data = self.recvfrom(self.max_size)
+                data = self.recvfrom(self.max_size, who_am_i)
                 if data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto(b'OK' + id)
+                        self.sendto(b'OK' + id, who_am_i)
                     elif id == d.id:
-                        self.sendto(d.get_losts_request())
+                        self.sendto(d.get_losts_request(), who_am_i)
                     else:
-                        self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_')
+                        self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_', who_am_i)
                 elif data.startswith(b'GET'):
                     logging.info(who_am_i + 'here')
                 elif data.startswith(b'OK'):
@@ -172,7 +182,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                     _, id, _ = data.split(SEP, 2)
                     if d.id is None or d.id == id:
                         d.add_part(data)
-                        self.sendto(d.get_losts_request())
+                        self.sendto(d.get_losts_request(), who_am_i)
                     else:
                         logging.info(who_am_i + 'duplicate')
                 else:
@@ -192,7 +202,7 @@ if __name__ == "__main__":
     t = time.time()
     for iterations in [10, 100, 1000]:
         setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
-        run_echo_test(iterations=iterations, msg_size=14)
+        run_echo_test(iterations=iterations, msg_size=17)
     print(time.time() - t)
 
 # Сброс кривых параметров (из-за которых в том числе может отваливаться VSCode remote)
