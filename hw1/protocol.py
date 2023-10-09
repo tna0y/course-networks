@@ -97,11 +97,11 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.send_buffer = OrderedDict()
         self.recv_buffer = []
 
-    def send(self, send_data: bytes):
+    def send(self, send_data: bytes, who_am_i: str = 'unknown'):
         b = Bufferizer(send_data)
         self.send_buffer[b.id] = b
         for part in b:
-            self.sendto( part)
+            self.sendto(part)
 
         while len(self.send_buffer):
             try:
@@ -116,26 +116,26 @@ class MyTCPProtocol(UDPBasedProtocol):
                     try:
                         if id == b'NEW':
                             for part in b:
-                                self.sendto( part)
-                            self.sendto( b'APPROVE' + b.id)
+                                self.sendto(part)
+                            self.sendto(b'APPROVE' + b.id)
                         else:
-                            self.sendto( self.send_buffer[id][int(lost_part)])
+                            self.sendto(self.send_buffer[id][int(lost_part)])
                     except KeyError:
                         pass
                 elif data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto( b'OK' + id)
+                        self.sendto(b'OK' + id)
                 elif data.startswith(b'DATA'):
-                    self.sendto( b'APPROVE' + list(self.send_buffer.keys())[0])
+                    self.sendto(b'APPROVE' + list(self.send_buffer.keys())[0])
             except TimeoutError:
                 for part in b:
-                    self.sendto( part)
-                self.sendto( b'APPROVE' + b.id)
+                    self.sendto(part)
+                self.sendto(b'APPROVE' + b.id)
 
         return len(send_data)
 
-    def recv(self, n: int):
+    def recv(self, n: int, who_am_i: str = 'unknown'):
         d = DeBufferizer()
         while not d.is_done():
             try:
@@ -143,11 +143,11 @@ class MyTCPProtocol(UDPBasedProtocol):
                 if data.startswith(b'APPROVE'):
                     id = data.removeprefix(b'APPROVE')
                     if id in self.recv_buffer:
-                        self.sendto( b'OK' + id)
+                        self.sendto(b'OK' + id)
                     elif id == d.id:
-                        self.sendto(  d.get_losts_request())
+                        self.sendto(d.get_losts_request())
                     else:
-                        self.sendto( b'GET' + SEP + b'NEW' + SEP + b'_')
+                        self.sendto(b'GET' + SEP + b'NEW' + SEP + b'_')
                 elif data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     self.recv_buffer.append(okid)
@@ -155,7 +155,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                     _, id, _ = data.split(SEP, 2)
                     if d.id is None or d.id == id:
                         d.add_part(data)
-                        self.sendto( d.get_losts_request())
+                        self.sendto(d.get_losts_request())
 
             except TimeoutError:
                 pass
@@ -168,62 +168,12 @@ class MyTCPProtocol(UDPBasedProtocol):
 
 if __name__ == "__main__":
     from protocol_test import *
-    
-    def log_time(timeout):
-        def decorator(func):
-            @functools.wraps(func)
-            def wrapper(*args, **kwargs):
-                print(func.__name__, end='... ')
-                t = time.time()
-                func(*args, **kwargs)
-                print(f'{round(time.time() - t, 2)}/{timeout} seconds.')
-            return wrapper
-        return decorator
 
-    @log_time(20)
-    def test_basic():
-        for iterations in [10, 100, 1000]:
-            setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
-            run_echo_test(iterations=iterations, msg_size=11)
-    @log_time(20)
-    def test_small_loss():
-        for iterations in [10, 100, 1000]:
-            setup_netem(packet_loss=0.02, duplicate=0.0, reorder=0.0)
-            run_echo_test(iterations=iterations, msg_size=14)
-    @log_time(20)
-    def test_small_duplicate():
-        for iterations in [10, 100, 1000, 5000]:
-            setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
-            run_echo_test(iterations=iterations, msg_size=14)
-    @log_time(20)
-    def test_high_loss():
-        for iterations in [10, 100, 1000]:
-            setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
-            run_echo_test(iterations=iterations, msg_size=17)
-    @log_time(20)
-    def test_high_duplicate():
-        for iterations in [10, 100, 1000]:
-            setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
-            run_echo_test(iterations=iterations, msg_size=14)
-    @log_time(180)
-    def test_large_message():
-        for msg_size in [100, 100_000, 10_000_000]:
-            setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-            run_echo_test(iterations=2, msg_size=msg_size)
-    @log_time(60)
-    def test_perfomance():
-        for iterations in [50_000]:
-            setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-            run_echo_test(iterations=iterations, msg_size=10)
-
-    test_basic()
-    test_small_loss()
-    test_small_duplicate()
-    test_high_loss()
-    test_high_duplicate()
-    test_large_message()
-    test_perfomance()
-
+    t = time.time()
+    for iterations in [10, 100, 1000]:
+        setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
+        run_echo_test(iterations=iterations, msg_size=14)
+    print(time.time() - t)
 
 # Сброс кривых параметров (из-за которых в том числе может отваливаться VSCode remote)
 # tc qdisc replace dev lo root netem loss 0% duplicate 0% reorder 0% delay 0ms
