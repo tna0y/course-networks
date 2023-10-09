@@ -116,6 +116,7 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.send_buffer[b.id] = b
         for part in b:
             self.sendto(mytype, part)
+        # self.sendto(mytype, b'APPROVE' + b.id)
 
         to_i = 0
         while len(self.send_buffer):
@@ -156,11 +157,12 @@ class MyTCPProtocol(UDPBasedProtocol):
                 else:
                     print(mytype, 'WTF2', data)
             except TimeoutError:
-                to_i += 1
-                if to_i > 10:
-                    break
-                print(mytype, 'ToE',)
+                for part in b:
+                    self.sendto(mytype, part)
+                self.sendto(mytype, b'APPROVE' + b.id)
+                print(mytype, 'ToE')
 
+        print(mytype, 'Closed')
         return len(send_data)
 
     def recv(self, mytype:str, n: int):
@@ -195,11 +197,12 @@ class MyTCPProtocol(UDPBasedProtocol):
                     print(mytype, 'WTF', data)
 
             except TimeoutError:
-                print('ToE')
+                print(mytype, 'ToE')
                 # self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
         
         # print('done')
         self.recv_buffer.append(d.id)
+        print(mytype, 'Closed')
         return d.get_data()
         
         
