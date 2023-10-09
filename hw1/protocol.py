@@ -125,8 +125,8 @@ class MyTCPProtocol(UDPBasedProtocol):
                 if data.startswith(b'OK'):
                     okid = data.removeprefix(b'OK')
                     if okid in self.send_buffer.keys():
-                        del_id = self.send_buffer.pop(okid)
-                        print(mytype, 'DEL ID', del_id)
+                        del_item = self.send_buffer.pop(okid)
+                        print(mytype, 'DEL ID', del_item.id)
                     else:
                         print(mytype, 'Duplicate ok')
                 elif data.startswith(b'GET'):
@@ -151,7 +151,8 @@ class MyTCPProtocol(UDPBasedProtocol):
                     # else:
                         # print(mytype, 'not in buffer', id)
                 elif data.startswith(b'DATA'):
-                    pass
+                    print('app')
+                    self.sendto(mytype, b'APPROVE' + list(self.send_buffer.keys())[0])
                 else:
                     print(mytype, 'WTF2', data)
             except TimeoutError:
@@ -197,7 +198,7 @@ class MyTCPProtocol(UDPBasedProtocol):
                 print('ToE')
                 # self.sendto(mytype, b'GET' + SEP + b'NEW' + SEP + b'_')
         
-        print('done')
+        # print('done')
         self.recv_buffer.append(d.id)
         return d.get_data()
         
