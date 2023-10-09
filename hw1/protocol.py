@@ -71,6 +71,7 @@ class DeBufferizer:
             assert self.id == id
         if self.total_parts is None:
             self.total_parts = int(total_parts)
+            self.parts_set = set(range(self.total_parts))
         else:
             assert self.total_parts == int(total_parts)
 
@@ -82,9 +83,13 @@ class DeBufferizer:
     def get_losts_request(self):
         if self.total_parts is None:
             raise ValueError('Get losts of not initialized DeBufferizer')
-        losts = list(map(bytes, list(set(range(self.total_parts)) - set(self.data_arr.keys()))))
+        # str_ints = list(map(str, ))
+        # print(str_ints)
+        # losts = list(map(bytes, encoding="UTF-8"), str_ints))
+        # print(losts)
+        losts = list(self.parts_set - set(self.data_arr.keys()))
         if len(losts) > 0:
-            return b'GET' + SEP + self.id + SEP + bytes(SEP.join(losts))
+            return b'GET' + SEP + self.id + SEP + bytes(str(losts[0]), encoding="UTF-8") 
         else:
             return b'OK' + self.id
 
@@ -136,14 +141,13 @@ class MyTCPProtocol(UDPBasedProtocol):
                 elif data.startswith(b'GET'):
                     logging.info('sssss')
                     try:
-                        _, id, lost_parts = data.split(SEP)
+                        _, id, lost_part = data.split(SEP)
                         if id == b'NEW':
                             for part in b:
                                 self.sendto(mytype, part)
                             self.sendto(mytype, b'APPROVE' + b.id)
                         else:
-                            for part_n in lost_parts:
-                                self.sendto(mytype, self.send_buffer[id][part_n])
+                            self.sendto(mytype, self.send_buffer[id][int(lost_part)])
                     except KeyError:
                         logging.info('Key')
                         pass
@@ -223,7 +227,7 @@ if __name__ == "__main__":
     # setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
     # run_echo_test(iterations=1000, msg_size=14)
     setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
-    run_echo_test(iterations=2, msg_size=msg_size)
+    run_echo_test(iterations=2, msg_size=10_000_000)
 
     # import time
     # t = time.time()
