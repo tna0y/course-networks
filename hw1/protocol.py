@@ -14,6 +14,9 @@ class UDPBasedProtocol:
         msg, addr = self.udp_socket.recvfrom(n)
         return msg
 
+    def close(self):
+        self.udp_socket.close()
+
 
 class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
