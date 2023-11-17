@@ -1,4 +1,4 @@
-# Лабораторная 1: VLAN + QinQ
+# Лабораторная 2: VLAN + QinQ
 
 ![Alt text](image-0.png)
 ![Alt text](image-1.png)
