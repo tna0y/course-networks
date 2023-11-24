@@ -8,7 +8,12 @@
 # GRE
 
 ![Alt text](image-4.png)
+
+R1
 ```sh
+ip route 192.168.2.0 255.255.255.0 10.0.0.2
+
+
 interface Tunnel0
 
     ip address 10.0.0.1 255.255.255.0
@@ -18,9 +23,9 @@ interface Tunnel0
     tunnel destination 1.2.3.3
 ```
 
-
+R3
 ```sh
-ip route 192.168.1.0 255.255.255.0
+ip route 192.168.1.0 255.255.255.0 10.0.0.1
 
 interface Tunnel0
 
