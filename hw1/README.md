@@ -7,6 +7,7 @@
 Для проверки решения следует запустить ко `test.sh`. Все необходимые Python зависимости можно найти в файле `requirements.txt`
 
 ## Запуск при помощи docker
+> При использовании Docker for Windows и WSL симулируемые ограничения на сеть могут не работать. В этом случае даже наивное решение будет проходить большинство тестов. Решение проблемы [тут](https://github.com/imunes/imunes/issues/111).
 ```
 docker compose up --build
 ```
@@ -20,5 +21,6 @@ docker compose up --build
 
 * `test_small_*` - 0.5 балла
 * `test_high_*` - 0.5 балла
-* `test_large_message` - 1 балл
+* `test_large_message` - 0.5 балла
+* `test_parallel` - 0.5 балла
 * `test_perfomance` - 1 балл, засчитывается только при прохождении всех остальных тестов.

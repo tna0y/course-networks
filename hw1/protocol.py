@@ -27,4 +27,7 @@ class MyTCPProtocol(UDPBasedProtocol):
 
     def recv(self, n: int):
         return self.recvfrom(n)
+    
+    def close(self):
+        super().close()
 
