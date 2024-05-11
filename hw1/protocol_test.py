@@ -1,5 +1,6 @@
 import os
 import random
+from contextlib import closing
 
 import pytest
 from testable_thread import TestableThread
@@ -23,25 +24,22 @@ def run_test(client_class, server_class, iterations, msg_size=None):
     a_addr = ('127.0.0.1', generate_port())
     b_addr = ('127.0.0.1', generate_port())
 
-    a = MyTCPProtocol(local_addr=a_addr, remote_addr=b_addr)
-    b = MyTCPProtocol(local_addr=b_addr, remote_addr=a_addr)
+    with closing(MyTCPProtocol(local_addr=a_addr, remote_addr=b_addr)) as a, \
+         closing(MyTCPProtocol(local_addr=b_addr, remote_addr=a_addr)) as b:
 
-    client = client_class(a, iterations=iterations, msg_size=msg_size)
-    server = server_class(b, iterations=iterations, msg_size=msg_size)
+        client = client_class(a, iterations=iterations, msg_size=msg_size)
+        server = server_class(b, iterations=iterations, msg_size=msg_size)
 
-    client_thread = TestableThread(target=client.run)
-    server_thread = TestableThread(target=server.run)
-    client_thread.daemon = True
-    server_thread.daemon = True
+        client_thread = TestableThread(target=client.run)
+        server_thread = TestableThread(target=server.run)
+        client_thread.daemon = True
+        server_thread.daemon = True
 
-    client_thread.start()
-    server_thread.start()
+        client_thread.start()
+        server_thread.start()
 
-    client_thread.join()
-    server_thread.join()
-
-    a.close()
-    b.close()
+        client_thread.join()
+        server_thread.join()
 
 
 current_netem_state = None
