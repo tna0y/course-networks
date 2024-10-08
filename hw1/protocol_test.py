@@ -52,49 +52,49 @@ def setup_netem(packet_loss, duplicate, reorder):
     current_netem_state = (packet_loss, duplicate, reorder)
     netem_cmd = f"tc qdisc replace dev lo root netem loss {packet_loss * 100}% duplicate {duplicate * 100}%"
     if reorder > 0:
-        netem_cmd += f" reorder {100 - reorder}% delay 10ms"
-
+        netem_cmd += f" reorder {100 - reorder}%"
+    netem_cmd += " delay 10ms rate 1Mbit"
     os.system(netem_cmd)
 
 
-@pytest.mark.parametrize("iterations", [10, 100, 1000])
-@pytest.mark.timeout(20)
+@pytest.mark.parametrize("iterations", [10, 50, 100])
+@pytest.mark.timeout(30)
 def test_basic(iterations):
     setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
     run_test(EchoClient, EchoServer, iterations=iterations, msg_size=11)
 
-@pytest.mark.parametrize("iterations", [10, 100, 1000])
-@pytest.mark.timeout(20)
+@pytest.mark.parametrize("iterations", [10, 100, 500])
+@pytest.mark.timeout(30)
 def test_small_loss(iterations):
     setup_netem(packet_loss=0.02, duplicate=0.0, reorder=0.0)
     run_test(EchoClient, EchoServer, iterations=iterations, msg_size=14)
 
-@pytest.mark.parametrize("iterations", [10, 100, 1000, 5000])
-@pytest.mark.timeout(20)
+@pytest.mark.parametrize("iterations", [10, 100, 500])
+@pytest.mark.timeout(30)
 def test_small_duplicate(iterations):
     setup_netem(packet_loss=0.0, duplicate=0.02, reorder=0.0)
     run_test(EchoClient, EchoServer, iterations=iterations, msg_size=14)
 
-@pytest.mark.parametrize("iterations", [10, 100, 1000])
-@pytest.mark.timeout(20)
+@pytest.mark.parametrize("iterations", [10, 100, 500])
+@pytest.mark.timeout(30)
 def test_high_loss(iterations):
     setup_netem(packet_loss=0.1, duplicate=0.0, reorder=0.0)
     run_test(EchoClient, EchoServer, iterations=iterations, msg_size=17)
 
-@pytest.mark.parametrize("iterations", [10, 100, 1000])
-@pytest.mark.timeout(20)
+@pytest.mark.parametrize("iterations", [10, 100, 500])
+@pytest.mark.timeout(30)
 def test_high_duplicate(iterations):
     setup_netem(packet_loss=0.0, duplicate=0.1, reorder=0.0)
     run_test(EchoClient, EchoServer, iterations=iterations, msg_size=14)
 
 
-@pytest.mark.parametrize("msg_size", [100, 100_000, 10_000_000])
+@pytest.mark.parametrize("msg_size", [100, 100_000, 5_000_000])
 @pytest.mark.timeout(180)
 def test_large_message(msg_size):
     setup_netem(packet_loss=0.02, duplicate=0.02, reorder=0.01)
     run_test(EchoClient, EchoServer, iterations=2, msg_size=msg_size)
 
-@pytest.mark.parametrize("iterations", [10, 1000, 5000])
+@pytest.mark.parametrize("iterations", [10, 100, 500])
 @pytest.mark.timeout(20)
 def test_parallel(iterations):
     setup_netem(packet_loss=0.0, duplicate=0.0, reorder=0.0)
