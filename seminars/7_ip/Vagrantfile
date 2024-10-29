@@ -1,0 +1,61 @@
+required_plugins = %w(vagrant-vbguest)
+
+plugins_to_install = required_plugins.select { |plugin| not Vagrant.has_plugin? plugin }
+if not plugins_to_install.empty?
+    puts "Installing plugins: #{plugins_to_install.join(' ')}"
+    if system "vagrant plugin install #{plugins_to_install.join(' ')}"
+        exec "vagrant #{ARGV.join(' ')}"
+    else
+        abort "Installation of one or more plugins has failed. Aborting."
+    end
+end
+
+Vagrant.configure("2") do |config|
+    # Define the Ubuntu box to use
+    config.vm.box = "ubuntu/focal64"
+  
+    # VM A Configuration
+    config.vm.define "A" do |a|
+      a.vm.hostname = "vmA"
+  
+      # SSH Access Interface
+      a.vm.network "forwarded_port", guest: 22, host: 22001, auto_correct: false
+      
+      # Interface connecting A and B (L2 network net_ab)
+      a.vm.network "private_network",
+                   virtualbox__intnet: "net_ab",
+                   auto_config: false
+    end
+  
+    # VM B Configuration
+    config.vm.define "B" do |b|
+      b.vm.hostname = "vmB"
+  
+      # SSH Access Interface
+      b.vm.network "forwarded_port", guest: 22, host: 22002, auto_correct: false
+  
+      # Interface connecting A and B (L2 network net_ab)
+      b.vm.network "private_network",
+                   virtualbox__intnet: "net_ab",
+                   auto_config: false
+  
+      # Interface connecting B and C (L2 network net_bc)
+      b.vm.network "private_network",
+                   virtualbox__intnet: "net_bc",
+                   auto_config: false
+    end
+  
+    # VM C Configuration
+    config.vm.define "C" do |c|
+      c.vm.hostname = "vmC"
+  
+      # SSH Access Interface
+      c.vm.network "forwarded_port", guest: 22, host: 22003, auto_correct: false
+
+      # Interface connecting B and C (L2 network net_bc)
+      c.vm.network "private_network",
+                   virtualbox__intnet: "net_bc",
+                   auto_config: false
+    end
+  end
+  
