@@ -23,14 +23,13 @@ Vagrant.configure("2") do |config|
 
     # Interface connecting A and B (L2 network net_ab)
     a.vm.network "private_network",
-                 ip: "172.1.2.1",
-                 virtualbox__intnet: "net_ab",
-                 auto_config: true
+      virtualbox__intnet: "net_ab",
+      auto_config: false
 
-    # Add route to reach C via B
-    a.vm.provision "shell", inline: <<-SHELL
-      sudo ip route add 172.2.3.0/24 via 172.1.2.2
-    SHELL
+    a.vm.provider "virtualbox" do |vb|
+      vb.memory = 2048
+      vb.cpus = 4
+    end
   end
 
   # VM B Configuration
@@ -42,21 +41,18 @@ Vagrant.configure("2") do |config|
 
     # Interface connecting A and B (L2 network net_ab)
     b.vm.network "private_network",
-                 ip: "172.1.2.2",
-                 virtualbox__intnet: "net_ab",
-                 auto_config: true
+      virtualbox__intnet: "net_ab",
+      auto_config: false
 
     # Interface connecting B and C (L2 network net_bc)
     b.vm.network "private_network",
-                 ip: "172.2.3.2",
-                 virtualbox__intnet: "net_bc",
-                 auto_config: true
+      virtualbox__intnet: "net_bc",
+      auto_config: false
 
-    # Enable IPv4 forwarding
-    b.vm.provision "shell", inline: <<-SHELL
-      sudo sysctl -w net.ipv4.ip_forward=1
-      sudo sed -i '/^#*net.ipv4.ip_forward=/c\\net.ipv4.ip_forward=1' /etc/sysctl.conf
-    SHELL
+    b.vm.provider "virtualbox" do |vb|
+      vb.memory = 2048
+      vb.cpus = 4
+    end
   end
 
   # VM C Configuration
@@ -66,15 +62,15 @@ Vagrant.configure("2") do |config|
     # SSH Access Interface
     c.vm.network "forwarded_port", guest: 22, host: 22003, auto_correct: false
 
+
     # Interface connecting B and C (L2 network net_bc)
     c.vm.network "private_network",
-                 ip: "172.2.3.3",
-                 virtualbox__intnet: "net_bc",
-                 auto_config: true
+                  virtualbox__intnet: "net_bc",
+                  auto_config: false
 
-    # Add route to reach A via B
-    c.vm.provision "shell", inline: <<-SHELL
-      sudo ip route add 172.1.2.0/24 via 172.2.3.2
-    SHELL
+    c.vm.provider "virtualbox" do |vb|
+      vb.memory = 2048
+      vb.cpus = 4
+    end
   end
 end
