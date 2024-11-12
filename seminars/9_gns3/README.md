@@ -14,7 +14,7 @@ GNS3 состоит из двух компонентов: GNS3 GUI и GNS3 Serve
 ## Видео установки и настройки GNS3
 
 - **Под Windows с использованием VirtualBox**: [Видеоинструкция](https://www.youtube.com/watch?v=rC5yVrSa7-U&list=PLHVUfYYv0xkkWgyC962qJsEISPmUhq0aB&index=23)
-- **Под Mac с ARM с использованием VMware**: [Видеоинструкция](https://drive.google.com/drive/folders/1tIYZECWyk3lb8QuLyPqUZmWRBcgGDNJJ)
+- **Под Mac с ARM с использованием VMware**: [Видеоинструкция в записи от 30.03](https://drive.google.com/drive/folders/1tIYZECWyk3lb8QuLyPqUZmWRBcgGDNJJ)
 
 ### VirtualBox (рекомендуется в большинстве случаев)
 
