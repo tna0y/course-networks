@@ -18,7 +18,7 @@ services:
     - NET_ADMIN
   eve:
     build: containers/eve
-    command: tcpdump -i eth0 -w /data/eve.pcap
+    command: tcpdump -i eth0 -U -w /data/eve.pcap
     volumes:
     - ./data:/data
     networks:
