@@ -1,0 +1,50 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"  # Ubuntu 20.04
+  
+  config.vagrant.plugins = "vagrant-vbguest"
+  config.vbguest.auto_update = true
+  
+  config.vm.define "vpn-server" do |server|
+    server.vm.hostname = "vpn-server"
+    server.vm.network "private_network", ip: "192.168.56.10"
+    
+    server.vm.synced_folder ".", "/vagrant", 
+      owner: "vagrant",
+      group: "vagrant"
+    
+    server.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+      vb.cpus = 1
+      vb.name = "vpn-server"
+    end
+    
+    server.vm.provision "shell", inline: <<-SHELL
+      apt-get update
+      apt-get install -y python3 python3-pip iptables net-tools
+      pip3 install -r /vagrant/requirements.txt
+      echo 'root:toor' | chpasswd
+    SHELL
+  end
+
+  config.vm.define "vpn-client" do |client|
+    client.vm.hostname = "vpn-client"
+    client.vm.network "private_network", ip: "192.168.56.11"
+    
+    client.vm.synced_folder ".", "/vagrant",
+      owner: "vagrant",
+      group: "vagrant"
+    
+    client.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+      vb.cpus = 1
+      vb.name = "vpn-client"
+    end
+    
+    client.vm.provision "shell", inline: <<-SHELL
+      apt-get update
+      apt-get install -y python3 python3-pip iptables net-tools
+      pip3 install -r /vagrant/requirements.txt
+      echo 'root:toor' | chpasswd
+    SHELL
+  end
+end 
