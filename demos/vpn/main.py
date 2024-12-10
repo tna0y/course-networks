@@ -1,6 +1,6 @@
 import os
 import argparse
-from vpn import VPNManager, TUNInterface, UDPTunnel
+from vpn import VPNManager, TUNInterface, UDPTransport
 
 
 def parse_args():
@@ -27,7 +27,7 @@ def main():
     remote_addr, remote_port = args.remote.split(':')
 
     tun = TUNInterface(args.interface_name)
-    udp = UDPTunnel(local_addr, int(local_port), remote_addr, int(remote_port))
+    udp = UDPTransport(local_addr, int(local_port), remote_addr, int(remote_port))
     vpn = VPNManager(tun, udp, debug=args.debug)
     
     try:

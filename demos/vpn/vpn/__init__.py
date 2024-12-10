@@ -1,5 +1,5 @@
 from .manager import VPNManager
 from .tun import TUNInterface
-from .udp import UDPTunnel
+from .udp import UDPTransport
 
-__all__ = ['VPNManager', 'TUNInterface', 'UDPTunnel']
+__all__ = ['VPNManager', 'TUNInterface', 'UDPTransport']
