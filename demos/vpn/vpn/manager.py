@@ -13,12 +13,22 @@ class VPNManager:
         if not self.debug:
             return
             
+        PROTO_NAMES = {
+            1: 'ICMP',
+            6: 'TCP',
+            17: 'UDP',
+            50: 'ESP',
+            51: 'AH',         
+        }
+        
         try:
             packet = IP(data)
-            print(f"{direction} {packet.src} > {packet.dst}, proto {packet.proto}, length {len(data)}")
+            proto_name = PROTO_NAMES.get(packet.proto, str(packet.proto))
+            print(f"{direction} {packet.src} > {packet.dst}, proto {proto_name}, length {len(data)}")
         except:
             print(f"{direction} Unknown packet type")
             return
+
     def start(self):
         self.running = True
         
@@ -52,5 +62,4 @@ class VPNManager:
                     self._debug_packet(data, f"{source_name} -> {dest_name}")
                     destination.write(data)
             except Exception as e:
-                print(f"Error forwarding packets: {e}")
-                break
+                print(f"Error forwarding packet: {e}")

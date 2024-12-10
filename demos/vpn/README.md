@@ -253,14 +253,14 @@ MAIN_INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
 Настраиваем NAT:
 ```sh
-iptables -t nat -A POSTROUTING -s ${TUN_NETWORK} -o ${MAIN_INTERFACE} -j MASQUERADE
+iptables -t nat -A POSTROUTING -s "10.0.0.0/24" -o ${MAIN_INTERFACE} -j MASQUERADE
 ```
 
 Разрешаеми и настраиваем форвардинг:
 ```sh
 echo 1 > /proc/sys/net/ipv4/ip_forward
-iptables -A FORWARD -i ${TUN_NAME} -o ${MAIN_INTERFACE} -j ACCEPT
-iptables -A FORWARD -i ${MAIN_INTERFACE} -o ${TUN_NAME} -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i "tun0" -o ${MAIN_INTERFACE} -j ACCEPT
+iptables -A FORWARD -i ${MAIN_INTERFACE} -o "tun0" -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 ```
 
