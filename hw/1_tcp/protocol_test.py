@@ -1,6 +1,7 @@
 import os
 import random
 from contextlib import closing
+import platform
 
 import pytest
 from testable_thread import TestableThread
@@ -44,7 +45,6 @@ def run_test(client_class, server_class, iterations, msg_size=None):
 
 current_netem_state = None
 
-
 def setup_netem(packet_loss, duplicate, reorder):
     global current_netem_state
     if current_netem_state == (packet_loss, duplicate, reorder):
@@ -54,8 +54,16 @@ def setup_netem(packet_loss, duplicate, reorder):
     if reorder > 0:
         netem_cmd += f" reorder {100 - reorder}%"
     netem_cmd += " delay 10ms rate 1Mbit"
-    os.system(netem_cmd)
-
+    return_code = os.system(netem_cmd)
+    if return_code != 0:
+        message = "Could not configure netem. Please check tc executable is available."
+        if platform.system() != "Linux":
+            message = (
+                "Linux is needed in order to execute tests. " +
+                "If docker is available, you can use it."
+            )
+        # Also exits even if not under pytest.
+        pytest.exit(message)
 
 @pytest.mark.parametrize("iterations", [10, 50, 100])
 @pytest.mark.timeout(30)
